@@ -1,0 +1,7 @@
+requests
+pyyaml
+openpyxl
+
+# dev / testing
+hypothesis
+pytest

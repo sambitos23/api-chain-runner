@@ -1,0 +1,46 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Virtual environment
+.venv/
+venv/
+env/
+
+# IDE
+.idea/
+.vscode/
+.kiro/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# pytest
+.pytest_cache/
+
+# Environment variables
+.env
+
+# Results/output
+results.csv
+results.xlsx
+
+# Sensitive YAML configs (contain API keys/tokens)
+bharatpe.yaml
+mobikwik.yaml
+paytm.yaml
+phonepe.yaml
+phonepe_counter_offer.yaml
+phonepe_udyam_reg.yaml
+spice_money.yaml
+
+# Sensitive documents
+doc_file/

@@ -1,0 +1,14 @@
+include README.md
+include pyproject.toml
+
+# Only include the package source code
+recursive-include api_chain_runner *.py
+
+# Exclude everything sensitive
+exclude *.yaml
+exclude requirements.txt
+recursive-exclude doc_file *
+recursive-exclude tests *
+recursive-exclude .kiro *
+exclude ARCHITECTURE.md
+exclude FROZENSET_EXPLANATION.md

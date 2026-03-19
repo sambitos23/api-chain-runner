@@ -1,0 +1,38 @@
+# Example API Chain: Authenticate → Create Lead
+#
+# Replace the placeholder credentials below with real values, or set
+# environment variables and use the ${ENV:VAR_NAME} syntax:
+#
+#   export AUTH_EMAIL="your-email@example.com"
+#   export AUTH_PASSWORD="your-password"
+#   export AUTH_API_KEY="your-api-key"
+#
+# Then run:
+#   python -m api_chain_runner example_chain.yaml
+
+chain:
+  - name: auth
+    url: "https://www.googleapis.com/identitytoolkit/v3/relyingparty/verifyPassword?key=${ENV:AUTH_API_KEY}"
+    method: POST
+    headers:
+      Content-Type: "application/json"
+    payload:
+      email: "${ENV:AUTH_EMAIL}"
+      password: "${ENV:AUTH_PASSWORD}"
+      returnSecureToken: true
+
+  - name: create_lead
+    url: "https://uat-gateway.datasignstech.com/lead/lead"
+    method: POST
+    headers:
+      Content-Type: "application/json"
+      Authorization: "Bearer ${auth.idToken}"
+    payload:
+      profileData:
+        email: "placeholder"
+        pan: "placeholder"
+        mobile: "placeholder"
+    unique_fields:
+      profileData.email: email
+      profileData.pan: pan
+      profileData.mobile: mobile

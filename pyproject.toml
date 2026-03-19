@@ -1,0 +1,47 @@
+[build-system]
+requires = ["setuptools>=68.0", "setuptools-scm"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "api-chain-runner"
+dynamic = ["version"]
+description = "Execute chained API calls defined in YAML configuration files"
+readme = "README.md"
+requires-python = ">=3.10"
+license = {text = "MIT"}
+authors = [
+    {name = "Your Name", email = "your.email@example.com"},
+]
+keywords = ["api", "chain", "runner", "yaml", "testing", "automation"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development :: Testing",
+]
+dependencies = [
+    "requests",
+    "pyyaml",
+    "openpyxl",
+]
+
+[project.urls]
+Homepage = "https://github.com/your-username/api-chain-runner"
+Repository = "https://github.com/your-username/api-chain-runner"
+Issues = "https://github.com/your-username/api-chain-runner/issues"
+
+[project.optional-dependencies]
+test = ["hypothesis", "pytest"]
+
+[project.scripts]
+api-chain-runner = "api_chain_runner.__main__:main"
+
+[tool.setuptools.dynamic]
+version = {attr = "api_chain_runner.__version__"}
+
+[tool.setuptools.packages.find]
+include = ["api_chain_runner*"]

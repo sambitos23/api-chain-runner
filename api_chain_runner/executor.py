@@ -1,0 +1,285 @@
+"""StepExecutor — executes a single API step with reference resolution and logging."""
+
+from __future__ import annotations
+
+import json
+import mimetypes
+import time
+from datetime import datetime, timezone, timedelta
+from pathlib import Path
+import requests
+from api_chain_runner.generator import UniqueDataGenerator
+from api_chain_runner.logger import ResultLogger
+from api_chain_runner.models import LogEntry, StepDefinition, StepResult
+from api_chain_runner.pause import PauseController
+from api_chain_runner.resolver import ReferenceResolver
+from api_chain_runner.store import ResponseStore
+
+IST = timezone(timedelta(hours=5, minutes=30))
+
+
+class StepExecutor:
+    """Executes a single API step: resolve references, generate unique data,
+    make the HTTP call, store the response, and log the result.
+
+    Parameters
+    ----------
+    resolver:
+        Resolves ``${step.key}`` references against stored responses.
+    generator:
+        Generates unique values for marked fields.
+    store:
+        In-memory response store for cross-step data sharing.
+    logger:
+        Logs every request/response to CSV or Excel.
+    pause_controller:
+        Optional controller for pause/resume during polling.
+    """
+
+    def __init__(
+        self,
+        resolver: ReferenceResolver,
+        generator: UniqueDataGenerator,
+        store: ResponseStore,
+        logger: ResultLogger,
+        pause_controller: PauseController | None = None,
+    ) -> None:
+        self.resolver = resolver
+        self.generator = generator
+        self.store = store
+        self.logger = logger
+        self.pause_controller = pause_controller
+
+    def execute(self, step: StepDefinition) -> StepResult:
+        """Execute a step, with optional polling until expected value is found.
+
+        If the step has a ``polling`` config, the step is re-executed at the
+        configured intervals until the response contains the expected value
+        at the specified key path, or the max timeout is exceeded.
+
+        Only the final polling result is logged to CSV — intermediate attempts
+        are printed to console but not written to the log file.
+        """
+        if not step.polling:
+            return self._execute_once(step)
+
+        polling = step.polling
+        start_time = time.monotonic()
+        attempt = 0
+
+        while True:
+            # Check for pause before each poll attempt
+            if self.pause_controller:
+                self.pause_controller.wait_if_paused()
+
+            result = self._execute_once(step, log_to_csv=False)
+            attempt += 1
+
+            # Subtract paused time from elapsed so timeout doesn't tick while paused
+            paused_time = self.pause_controller.total_paused if self.pause_controller else 0.0
+            elapsed = time.monotonic() - start_time - paused_time
+
+            # Check if the response value matches any of the expected values
+            if result.success and isinstance(result.response_body, dict):
+                actual = self._get_nested(result.response_body, polling.key_path)
+                if str(actual) in polling.expected_values:
+                    print(
+                        f"  [polling] '{step.name}' got expected "
+                        f"'{polling.key_path}={actual}' "
+                        f"after {attempt} attempt(s) ({elapsed:.1f}s)"
+                    )
+                    self._log_result(step, result)
+                    return result
+                else:
+                    print(
+                        f"  [polling] '{step.name}' attempt {attempt}: "
+                        f"'{polling.key_path}' = '{actual}' "
+                        f"(waiting for {polling.expected_values})"
+                    )
+
+            # Check timeout before sleeping for next attempt
+            if elapsed >= polling.max_timeout:
+                actual_display = self._get_nested(
+                    result.response_body, polling.key_path
+                ) if isinstance(result.response_body, dict) else "N/A"
+                error_msg = (
+                    f"Polling timed out after {elapsed:.1f}s ({attempt} attempts). "
+                    f"Expected '{polling.key_path}' in {polling.expected_values}, "
+                    f"last value='{actual_display}'."
+                )
+                print(f"  [polling] '{step.name}' TIMEOUT: {error_msg}")
+                timeout_result = StepResult(
+                    step_name=step.name,
+                    status_code=result.status_code,
+                    response_body=result.response_body,
+                    duration_ms=(time.monotonic() - start_time - paused_time) * 1000,
+                    success=False,
+                    error=error_msg,
+                )
+                self._log_result(step, timeout_result)
+                return timeout_result
+
+            # Don't sleep past the timeout
+            remaining = polling.max_timeout - elapsed
+            actual_wait = min(polling.interval, remaining)
+            if actual_wait <= 0:
+                continue
+            print(
+                f"  [polling] '{step.name}' attempt {attempt}: "
+                f"waiting {actual_wait:.0f}s before retry..."
+            )
+            self._interruptible_sleep(actual_wait)
+
+    @staticmethod
+    def _get_nested(data, key_path: str):
+        """Traverse a dict/list by dot-separated key path.
+
+        Supports array indexing via numeric segments, e.g.
+        ``"applications.0.status"`` resolves to ``data["applications"][0]["status"]``.
+        Negative indices are supported, e.g. ``"applications.-1.status"``
+        resolves to the last element.
+
+        Returns None if any segment is not found.
+        """
+        current = data
+        for key in key_path.split("."):
+            if isinstance(current, dict) and key in current:
+                current = current[key]
+            elif isinstance(current, list) and (key.isdigit() or (key.startswith("-") and key[1:].isdigit())):
+                idx = int(key)
+                if -len(current) <= idx < len(current):
+                    current = current[idx]
+                else:
+                    return None
+            else:
+                return None
+        return current
+
+    def _execute_once(self, step: StepDefinition, log_to_csv: bool = True) -> StepResult:
+        """Execute a single API step.
+
+        Phases:
+            1. Resolve ``${step.key}`` references in headers and payload.
+            2. Apply unique field generation if ``unique_fields`` is set.
+            3. Execute the HTTP request with a 30 s timeout.
+            4. Store dict responses in :class:`ResponseStore`.
+            5. Log the request/response as a :class:`LogEntry`.
+
+        Args:
+            step: The step definition to execute.
+
+        Returns:
+            A :class:`StepResult` capturing status code, body, timing, and errors.
+        """
+        # Phase 1: Resolve references in url, headers, and payload
+        resolved_url = self.resolver.resolve(step.url)
+        resolved_headers = self.resolver.resolve(step.headers)
+        resolved_payload = self.resolver.resolve(step.payload) if step.payload else None
+
+        # Phase 2: Generate unique fields if specified
+        if resolved_payload and step.unique_fields:
+            resolved_payload = self.generator.apply(resolved_payload, step.unique_fields)
+
+        # Phase 3: Execute HTTP request
+        start = time.monotonic()
+        opened_files: list = []
+        try:
+            # Build request kwargs based on whether this is a file upload
+            request_kwargs: dict = {
+                "method": step.method,
+                "url": resolved_url,
+                "headers": resolved_headers,
+                "timeout": 30,
+            }
+
+            opened_files = []
+            if step.files:
+                # Multipart file upload — open files and attach as multipart/form-data
+                files_dict = {}
+                for field_name, file_path in step.files.items():
+                    p = Path(file_path)
+                    mime_type = mimetypes.guess_type(p.name)[0] or "application/octet-stream"
+                    fh = open(p, "rb")
+                    opened_files.append(fh)
+                    files_dict[field_name] = (p.name, fh, mime_type)
+                request_kwargs["files"] = files_dict
+                # Send any extra payload fields as form data alongside the file
+                if resolved_payload:
+                    request_kwargs["data"] = resolved_payload
+            else:
+                request_kwargs["json"] = resolved_payload
+
+            response = requests.request(**request_kwargs)
+            duration_ms = (time.monotonic() - start) * 1000
+
+            try:
+                body = response.json()
+            except ValueError:
+                body = response.text
+
+            # Phase 4: Store response for downstream steps
+            if isinstance(body, dict):
+                self.store.save(step.name, body)
+
+            result = StepResult(
+                step_name=step.name,
+                status_code=response.status_code,
+                response_body=body,
+                duration_ms=duration_ms,
+                success=200 <= response.status_code < 300,
+            )
+
+        except requests.RequestException as e:
+            duration_ms = (time.monotonic() - start) * 1000
+            result = StepResult(
+                step_name=step.name,
+                status_code=-1,
+                response_body="",
+                duration_ms=duration_ms,
+                success=False,
+                error=str(e),
+            )
+        finally:
+            for fh in opened_files:
+                fh.close()
+
+        # Phase 5: Log regardless of outcome (unless suppressed for polling)
+        if log_to_csv:
+            self._log_result(step, result)
+
+        return result
+
+    def _log_result(self, step: StepDefinition, result: StepResult) -> None:
+        """Write a single result entry to the logger."""
+        resolved_url = self.resolver.resolve(step.url)
+        resolved_headers = self.resolver.resolve(step.headers)
+        resolved_payload = self.resolver.resolve(step.payload) if step.payload else None
+
+        self.logger.log(
+            LogEntry(
+                timestamp=datetime.now(IST).isoformat(),
+                step_name=result.step_name,
+                method=step.method,
+                url=resolved_url,
+                request_headers=json.dumps(resolved_headers),
+                request_body=json.dumps(resolved_payload) if resolved_payload else "",
+                status_code=result.status_code,
+                response_body=(
+                    json.dumps(result.response_body)
+                    if isinstance(result.response_body, dict)
+                    else str(result.response_body)
+                ),
+                duration_ms=result.duration_ms,
+                error=result.error,
+            )
+        )
+
+    def _interruptible_sleep(self, seconds: float) -> None:
+        """Sleep for the given duration, checking for pause every 0.5s."""
+        remaining = seconds
+        while remaining > 0:
+            if self.pause_controller:
+                self.pause_controller.wait_if_paused()
+            chunk = min(0.5, remaining)
+            time.sleep(chunk)
+            remaining -= chunk
