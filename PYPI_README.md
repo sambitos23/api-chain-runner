@@ -207,6 +207,24 @@ condition:
   expected_value: "PENDING"
 ```
 
+### Response Evaluation
+
+Extract and evaluate response values against conditions:
+
+```yaml
+- name: check-scores
+  url: "https://api.example.com/report?userId=${app.userId}"
+  method: GET
+  eval_keys:
+    profile_score: "features.PROFILE_SCORE"
+    pan_score: "features.PAN_SCORE"
+  eval_condition: "profile_score > 0.55 and pan_score > 0.55"
+  success_message: "Scores above threshold - SUCCESS"
+  failure_message: "Scores below threshold - FAILURE"
+```
+
+Supports any Python comparison: `>`, `==`, `and`, `or`, `is not None`, etc.
+
 ### Manual Steps
 
 Pause the chain for manual actions (e.g. filling a form in a browser):
@@ -239,6 +257,10 @@ Press `p` to pause between steps, `r` or `Enter` to resume, `Ctrl+C` to abort.
 | `instruction` | No | Instructions for manual steps |
 | `condition` | No | Conditional execution |
 | `continue_on_error` | No | Stop chain on failure if `false` |
+| `eval_keys` | No | Extract response values into named variables |
+| `eval_condition` | No | Python expression to evaluate using `eval_keys` |
+| `success_message` | No | Message printed when `eval_condition` is true |
+| `failure_message` | No | Message printed when `eval_condition` is false |
 
 ## Output
 

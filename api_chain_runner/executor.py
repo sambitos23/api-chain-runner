@@ -67,6 +67,9 @@ class StepExecutor:
         start_time = time.monotonic()
         attempt = 0
 
+        # Status-only polling: no key_path, just retry until 2xx
+        status_only = polling.key_path is None
+
         while True:
             # Check for pause before each poll attempt
             if self.pause_controller:
@@ -79,13 +82,11 @@ class StepExecutor:
             paused_time = self.pause_controller.total_paused if self.pause_controller else 0.0
             elapsed = time.monotonic() - start_time - paused_time
 
-            # Check if the response value matches any of the expected values
-            if result.success and isinstance(result.response_body, dict):
-                actual = self._get_nested(result.response_body, polling.key_path)
-                if str(actual) in polling.expected_values:
+            if status_only:
+                # Poll until we get a successful HTTP response
+                if result.success:
                     print(
-                        f"  [polling] '{step.name}' got expected "
-                        f"'{polling.key_path}={actual}' "
+                        f"  [polling] '{step.name}' got HTTP {result.status_code} "
                         f"after {attempt} attempt(s) ({elapsed:.1f}s)"
                     )
                     self._log_result(step, result)
@@ -93,20 +94,48 @@ class StepExecutor:
                 else:
                     print(
                         f"  [polling] '{step.name}' attempt {attempt}: "
-                        f"'{polling.key_path}' = '{actual}' "
-                        f"(waiting for {polling.expected_values})"
+                        f"HTTP {result.status_code} (waiting for 2xx)"
+                    )
+            else:
+                # Check if the response value matches any of the expected values
+                if result.success and isinstance(result.response_body, dict):
+                    actual = self._get_nested(result.response_body, polling.key_path)
+                    if str(actual) in polling.expected_values:
+                        print(
+                            f"  [polling] '{step.name}' got expected "
+                            f"'{polling.key_path}={actual}' "
+                            f"after {attempt} attempt(s) ({elapsed:.1f}s)"
+                        )
+                        self._log_result(step, result)
+                        return result
+                    else:
+                        print(
+                            f"  [polling] '{step.name}' attempt {attempt}: "
+                            f"'{polling.key_path}' = '{actual}' "
+                            f"(waiting for {polling.expected_values})"
+                        )
+                elif not result.success:
+                    print(
+                        f"  [polling] '{step.name}' attempt {attempt}: "
+                        f"HTTP {result.status_code} (waiting for 2xx)"
                     )
 
             # Check timeout before sleeping for next attempt
             if elapsed >= polling.max_timeout:
-                actual_display = self._get_nested(
-                    result.response_body, polling.key_path
-                ) if isinstance(result.response_body, dict) else "N/A"
-                error_msg = (
-                    f"Polling timed out after {elapsed:.1f}s ({attempt} attempts). "
-                    f"Expected '{polling.key_path}' in {polling.expected_values}, "
-                    f"last value='{actual_display}'."
-                )
+                if status_only:
+                    error_msg = (
+                        f"Polling timed out after {elapsed:.1f}s ({attempt} attempts). "
+                        f"Expected HTTP 2xx, last status={result.status_code}."
+                    )
+                else:
+                    actual_display = self._get_nested(
+                        result.response_body, polling.key_path
+                    ) if isinstance(result.response_body, dict) else "N/A"
+                    error_msg = (
+                        f"Polling timed out after {elapsed:.1f}s ({attempt} attempts). "
+                        f"Expected '{polling.key_path}' in {polling.expected_values}, "
+                        f"last value='{actual_display}'."
+                    )
                 print(f"  [polling] '{step.name}' TIMEOUT: {error_msg}")
                 timeout_result = StepResult(
                     step_name=step.name,
@@ -154,6 +183,45 @@ class StepExecutor:
             else:
                 return None
         return current
+
+    def _evaluate_keys(self, step: StepDefinition, body: dict) -> dict | None:
+        """Evaluate eval_keys and print success/failure messages based on condition.
+
+        Returns a dict of extracted key-value pairs (for CSV logging), or None
+        if no eval_keys are configured.
+        """
+        if not step.eval_keys:
+            return None
+
+        # Extract values for each eval_key
+        eval_values = {}
+        for alias, key_path in step.eval_keys.items():
+            value = self._get_nested(body, key_path)
+            eval_values[alias] = value
+            print(f"  [eval] {alias} = {value} (from {key_path})")
+
+        # Check if eval_condition is met
+        if step.eval_condition:
+            try:
+                local_ns = {**eval_values}
+                result = eval(step.eval_condition, {"__builtins__": {}}, local_ns)
+
+                if result:
+                    eval_values["_eval_result"] = "SUCCESS"
+                    if step.success_message:
+                        eval_values["_eval_message"] = step.success_message
+                        print(f"  [eval] ✅ SUCCESS: {step.success_message}")
+                else:
+                    eval_values["_eval_result"] = "FAILURE"
+                    if step.failure_message:
+                        eval_values["_eval_message"] = step.failure_message
+                        print(f"  [eval] ❌ FAILURE: {step.failure_message}")
+            except Exception as e:
+                eval_values["_eval_result"] = "ERROR"
+                eval_values["_eval_message"] = str(e)
+                print(f"  [eval] ERROR evaluating condition: {e}")
+
+        return eval_values
 
     def _execute_once(self, step: StepDefinition, log_to_csv: bool = True) -> StepResult:
         """Execute a single API step.
@@ -221,12 +289,18 @@ class StepExecutor:
             if isinstance(body, dict):
                 self.store.save(step.name, body)
 
+            # Phase 4b: Evaluate eval_keys if specified
+            eval_values = None
+            if step.eval_keys and isinstance(body, dict):
+                eval_values = self._evaluate_keys(step, body)
+
             result = StepResult(
                 step_name=step.name,
                 status_code=response.status_code,
                 response_body=body,
                 duration_ms=duration_ms,
                 success=200 <= response.status_code < 300,
+                eval_result=eval_values,
             )
 
         except requests.RequestException as e:
@@ -255,6 +329,14 @@ class StepExecutor:
         resolved_headers = self.resolver.resolve(step.headers)
         resolved_payload = self.resolver.resolve(step.payload) if step.payload else None
 
+        # If eval_keys extracted values, log those instead of the full response
+        if result.eval_result is not None:
+            response_body_str = json.dumps(result.eval_result)
+        elif isinstance(result.response_body, dict):
+            response_body_str = json.dumps(result.response_body)
+        else:
+            response_body_str = str(result.response_body)
+
         self.logger.log(
             LogEntry(
                 timestamp=datetime.now(IST).isoformat(),
@@ -264,11 +346,7 @@ class StepExecutor:
                 request_headers=json.dumps(resolved_headers),
                 request_body=json.dumps(resolved_payload) if resolved_payload else "",
                 status_code=result.status_code,
-                response_body=(
-                    json.dumps(result.response_body)
-                    if isinstance(result.response_body, dict)
-                    else str(result.response_body)
-                ),
+                response_body=response_body_str,
                 duration_ms=result.duration_ms,
                 error=result.error,
             )

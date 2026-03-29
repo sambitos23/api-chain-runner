@@ -18,12 +18,16 @@ class ConfigurationError(Exception):
 
 @dataclass
 class PollingConfig:
-    """Polling configuration for a step that needs to wait for a specific value."""
+    """Polling configuration for a step that needs to wait for a specific value.
 
-    key_path: str  # dot-notation path in response to check (e.g. "status")
-    expected_values: list[str]  # list of acceptable values (e.g. ["APPROVED", "COMPLETED"])
+    If ``key_path`` and ``expected_values`` are omitted, polling retries until
+    the endpoint returns a successful HTTP response (2xx).
+    """
+
     interval: int  # retry interval in seconds (e.g. 5)
     max_timeout: int = 120  # max total polling time in seconds
+    key_path: str | None = None  # dot-notation path in response to check (e.g. "status")
+    expected_values: list[str] | None = None  # list of acceptable values (e.g. ["APPROVED", "COMPLETED"])
 
 
 @dataclass
@@ -55,6 +59,10 @@ class StepDefinition:
     print_ref: list[str] | None = None  # references to print from previous steps (e.g. "step.key")
     condition: list[ConditionConfig] | None = None  # conditional execution (all must pass)
     continue_on_error: bool = True
+    eval_keys: dict[str, str] | None = None  # key alias -> dot-notation path for evaluation
+    eval_condition: str | None = None  # Python expression to evaluate using eval_keys values
+    success_message: str | None = None  # message to print on success condition
+    failure_message: str | None = None  # message to print on failure condition
 
     def validate(self) -> None:
         """Validate this step definition.
@@ -105,6 +113,7 @@ class StepResult:
     duration_ms: float
     success: bool
     error: str | None = None
+    eval_result: dict | None = None  # extracted eval_keys values (logged to CSV instead of full response)
 
 
 @dataclass

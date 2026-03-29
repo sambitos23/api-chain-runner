@@ -75,6 +75,10 @@ chain:
 | `print_ref` | No | List of `step.key` references to print from previous steps (for manual steps) |
 | `condition` | No | Only execute this step if a previous step's response matches a value |
 | `continue_on_error` | No | If `false`, chain stops on failure (default: `true`) |
+| `eval_keys` | No | Extract response values into named variables for evaluation |
+| `eval_condition` | No | Python expression to evaluate using `eval_keys` variables |
+| `success_message` | No | Message printed when `eval_condition` is true |
+| `failure_message` | No | Message printed when `eval_condition` is false |
 
 ### Delay Between Steps
 
@@ -385,6 +389,46 @@ If any condition is not met, the step is skipped with a message:
 ```
 
 Conditions work on both API steps and manual steps.
+
+### Response Evaluation (eval_keys)
+
+Extract values from a response and evaluate them against a condition. Useful for checking thresholds, matching scores, or validating business logic inline:
+
+```yaml
+- name: check-credit-report
+  url: "https://api.example.com/credit-report?userId=${app.userId}"
+  method: GET
+  headers:
+    Authorization: "Bearer ${vars.token}"
+  eval_keys:
+    profile_score: "features.AADHAAR_PROFILE_NAME_MATCH_SCORE"
+    pan_score: "features.AADHAAR_PAN_NAME_MATCH_SCORE"
+  eval_condition: "profile_score > 0.55 and pan_score > 0.55"
+  success_message: "Name match scores are above threshold - SUCCESS"
+  failure_message: "Name match scores are below threshold - FAILURE"
+```
+
+How it works:
+1. `eval_keys` extracts values from the response using dot-notation paths and assigns them to named variables
+2. `eval_condition` evaluates a Python expression using those variables
+3. Prints `success_message` or `failure_message` based on the result
+4. Only the extracted `eval_keys` values (plus the eval result) are logged to CSV — not the full response body. This keeps your output focused on the fields you care about.
+
+Console output:
+
+```
+[6/8] ▶ check-credit-report (GET https://api.example.com/credit-report?...)
+         ✅ Passed — HTTP 200 (523ms)
+         [eval] profile_score = 1 (from features.AADHAAR_PROFILE_NAME_MATCH_SCORE)
+         [eval] pan_score = 0.3 (from features.AADHAAR_PAN_NAME_MATCH_SCORE)
+         [eval] ❌ FAILURE: Name match scores are below threshold - FAILURE
+```
+
+You can use any valid Python comparison in `eval_condition`:
+- `score > 0.55` — numeric threshold
+- `status == 'APPROVED'` — string equality
+- `a > 0.5 and b > 0.5` — compound conditions
+- `val is not None and val > 0` — null-safe checks
 
 ### IST Timestamps
 

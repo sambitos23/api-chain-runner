@@ -156,6 +156,10 @@ class ChainRunner:
                     condition=condition,
                     delay=int(entry.get("delay", 0)),
                     continue_on_error=entry.get("continue_on_error", True),
+                    eval_keys=entry.get("eval_keys"),
+                    eval_condition=entry.get("eval_condition"),
+                    success_message=entry.get("success_message"),
+                    failure_message=entry.get("failure_message"),
                 )
                 steps.append(step)
                 continue
@@ -175,22 +179,29 @@ class ChainRunner:
                     raise ConfigurationError(
                         f"Step '{entry['name']}': 'polling' must be a mapping."
                     )
-                for req_field in ("key_path", "expected_values", "interval"):
-                    if req_field not in p:
+                if "interval" not in p:
+                    raise ConfigurationError(
+                        f"Step '{entry['name']}': polling missing required field 'interval'."
+                    )
+
+                # key_path and expected_values are optional — if omitted, polls until 2xx
+                key_path = p.get("key_path")
+                ev = None
+                if key_path is not None:
+                    if "expected_values" not in p:
                         raise ConfigurationError(
-                            f"Step '{entry['name']}': polling missing required field '{req_field}'."
+                            f"Step '{entry['name']}': polling with 'key_path' requires 'expected_values'."
                         )
-                # Normalize expected_values to list of strings
-                ev = p["expected_values"]
-                if isinstance(ev, str):
-                    ev = [ev]
-                ev = [str(v) for v in ev]
+                    ev = p["expected_values"]
+                    if isinstance(ev, str):
+                        ev = [ev]
+                    ev = [str(v) for v in ev]
 
                 polling = PollingConfig(
-                    key_path=p["key_path"],
-                    expected_values=ev,
                     interval=int(p["interval"]),
                     max_timeout=p.get("max_timeout", 120),
+                    key_path=key_path,
+                    expected_values=ev,
                 )
 
             step = StepDefinition(
@@ -207,6 +218,10 @@ class ChainRunner:
                 print_keys=entry.get("print_keys"),
                 condition=condition,
                 continue_on_error=entry.get("continue_on_error", True),
+                eval_keys=entry.get("eval_keys"),
+                eval_condition=entry.get("eval_condition"),
+                success_message=entry.get("success_message"),
+                failure_message=entry.get("failure_message"),
             )
             steps.append(step)
 
