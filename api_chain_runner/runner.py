@@ -1,6 +1,8 @@
 """ChainRunner — top-level orchestrator for chained API execution."""
 
 from __future__ import annotations
+import os
+import re
 import time
 import yaml
 from datetime import datetime, timezone, timedelta
@@ -26,6 +28,43 @@ from api_chain_runner.store import ResponseStore
 IST = timezone(timedelta(hours=5, minutes=30))
 
 
+def _load_env_file(env_path: str) -> None:
+    """Load key=value pairs from a .env file into os.environ.
+
+    Skips blank lines and comments. Strips quotes. Does not override
+    existing environment variables.
+    """
+    if not os.path.isfile(env_path):
+        return
+    with open(env_path, "r", encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            if "=" not in line:
+                continue
+            key, _, value = line.partition("=")
+            key = key.strip()
+            value = value.strip()
+            if len(value) >= 2 and value[0] == value[-1] and value[0] in ('"', "'"):
+                value = value[1:-1]
+            if key and key not in os.environ:
+                os.environ[key] = value
+
+
+def _substitute_env_vars(obj):
+    """Recursively substitute ``${ENV:VAR_NAME}`` placeholders."""
+    if isinstance(obj, dict):
+        return {k: _substitute_env_vars(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_substitute_env_vars(item) for item in obj]
+    if isinstance(obj, str):
+        def _replace(match):
+            return os.environ.get(match.group(1), match.group(0))
+        return re.sub(r"\$\{ENV:([^}]+)\}", _replace, obj)
+    return obj
+
+
 class ChainRunner:
     """Top-level orchestrator that loads a chain configuration and executes
     steps in order.
@@ -36,8 +75,16 @@ class ChainRunner:
         Path to a YAML file describing the chain of API steps.
     """
 
-    def __init__(self, config_path: str) -> None:
+    def __init__(self, config_path: str, env_file: str | None = None) -> None:
         self.config_path = config_path
+
+        # Auto-load .env files (config dir → parent dir → cwd → explicit)
+        config_dir = str(Path(config_path).resolve().parent)
+        _load_env_file(os.path.join(config_dir, ".env"))
+        _load_env_file(os.path.join(config_dir, "..", ".env"))
+        _load_env_file(".env")
+        if env_file:
+            _load_env_file(env_file)
 
         # Core components
         self.store = ResponseStore()
@@ -88,6 +135,9 @@ class ChainRunner:
             raise ConfigurationError(
                 f"Invalid YAML in configuration file: {exc}"
             ) from exc
+
+        # Substitute ${ENV:VAR_NAME} placeholders
+        raw = _substitute_env_vars(raw)
 
         if not isinstance(raw, dict) or "chain" not in raw:
             raise ConfigurationError(
@@ -237,6 +287,7 @@ class ChainRunner:
         """
         with open(config_path, "r", encoding="utf-8") as fh:
             raw = yaml.safe_load(fh)
+        raw = _substitute_env_vars(raw)
         variables = raw.get("variables")
         if variables and isinstance(variables, dict):
             self.store.save("vars", variables)
@@ -397,7 +448,7 @@ class ChainRunner:
                     value = StepExecutor._get_nested(stored, parts[1])
                     print(f"         📋 {ref} = {value}")
 
-        print(f"         ⏳ Waiting for you to complete the task...")
+        print("         ⏳ Waiting for you to complete the task...")
         input("         Press Enter to continue ▶ ")
 
         # Restart the keyboard listener
@@ -405,7 +456,7 @@ class ChainRunner:
         self.pause_controller.start()
         self.executor.pause_controller = self.pause_controller
 
-        print(f"         ✅ Manual step completed")
+        print("         ✅ Manual step completed")
 
         # Log the manual step
         self.logger.log(

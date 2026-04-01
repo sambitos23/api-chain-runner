@@ -53,6 +53,9 @@ api-chain-runner my_chain.yaml -o results.xlsx -f xlsx
 # Launch web UI
 api-chain-runner --ui flow/
 
+# Custom env file
+api-chain-runner my_chain.yaml -e production.env
+
 # Check version
 api-chain-runner --version
 ```
@@ -88,8 +91,44 @@ url: "https://api.example.com/status?id=${create_lead.leadId}"
 Keep secrets out of your YAML with `${ENV:VAR_NAME}`:
 
 ```yaml
-url: "https://api.example.com/auth?key=${ENV:API_KEY}"
+variables:
+  my_token: "${ENV:MY_TOKEN}"
+  firebase_key: "${ENV:FIREBASE_KEY}"
+
+chain:
+  - name: auth
+    url: "https://api.example.com/auth?key=${ENV:API_KEY}"
+    method: POST
 ```
+
+Create a `.env` file in your project directory:
+
+```
+MY_TOKEN="eyJhbGciOi..."
+FIREBASE_KEY="AIzaSy..."
+API_KEY="your-api-key"
+```
+
+The `.env` file is auto-loaded from the config file's directory, its parent directory, or the current working directory. No extra flags needed.
+
+For a custom env file, use `-e` / `--env`:
+
+```bash
+api-chain-runner my_chain.yaml -e production.env
+api-chain-runner --ui flow/ -e staging.env
+```
+
+Library usage:
+
+```python
+runner = ChainRunner("my_chain.yaml")                          # auto-loads .env
+runner = ChainRunner("my_chain.yaml", env_file="prod.env")     # custom env file
+```
+
+Rules:
+- `.env` values don't override existing shell environment variables
+- Lines starting with `#` are comments
+- Unresolved `${ENV:...}` placeholders are left as-is for clear error messages
 
 ### Variables
 

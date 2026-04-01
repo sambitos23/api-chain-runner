@@ -14,12 +14,6 @@
     const responsePanel = document.getElementById("response-panel");
     const responseList = document.getElementById("response-list");
     const responseClose = document.getElementById("response-close");
-    const editorPanel = document.getElementById("editor-panel");
-    const editorToggle = document.getElementById("nav-editor-toggle");
-    const editorSave = document.getElementById("editor-save");
-    const editorCancel = document.getElementById("editor-cancel");
-    const editorStatus = document.getElementById("editor-status");
-    const yamlEditor = document.getElementById("yaml-editor");
 
     const steps = CHAIN_DATA.steps;
     const stepBoxes = [];
@@ -93,47 +87,158 @@
         detailSaveStatus.textContent = "";
         detailSaveStatus.className = "detail-save-status";
 
+        const isManual = step.manual;
+        const curMethod = step.method.toUpperCase();
         let html = "";
-        html += readonlyRow("Method", step.method.toUpperCase());
-        html += editableRow("url", "URL", step.url || "");
-        if (step.delay > 0) html += readonlyRow("Delay", `${step.delay}s`);
-        html += readonlyRow("Continue on Error", step.continue_on_error ? "Yes" : "No");
 
-        if (step.headers && Object.keys(step.headers).length)
-            html += editableRow("headers", "Headers", JSON.stringify(step.headers, null, 2));
-        if (step.payload)
-            html += editableRow("payload", "Payload", JSON.stringify(step.payload, null, 2));
-        if (step.unique_fields)
-            html += editableRow("unique_fields", "Unique Fields", JSON.stringify(step.unique_fields, null, 2));
-        if (step.files)
-            html += readonlyRow("Files", JSON.stringify(step.files, null, 2));
-        if (step.print_keys && step.print_keys.length)
-            html += readonlyRow("Print Keys", step.print_keys.join(", "));
-        if (step.has_polling && step.polling) {
-            const p = step.polling;
-            html += readonlyRow("Polling", [
-                p.key_path ? `Path: ${p.key_path}` : "Until 2xx",
-                p.expected_values && p.expected_values.length ? `Expected: ${p.expected_values.join(", ")}` : "",
-                `Interval: ${p.interval}s`, `Timeout: ${p.max_timeout}s`,
-            ].filter(Boolean).join("\n"));
+        if (isManual) {
+            // ── Manual step UI ──
+            html += `<div class="detail-row"><div class="detail-label">Type</div><div class="detail-value">Manual Step</div></div>`;
+            html += editableRow("instruction", "Instruction", step.instruction || "");
+            html += buildListField("print_ref", "Print References", step.print_ref || [], "e.g. create-lead.leadId");
+            html += numberRow("delay", "Delay (seconds)", step.delay || 0);
+            html += dropdownRow("continue_on_error", "Continue on Error", step.continue_on_error);
+        } else {
+            // ── API step UI ──
+            const methods = ["GET","POST","PUT","DELETE","PATCH","HEAD","OPTIONS"];
+            html += `<div class="detail-row"><div class="detail-label">Method</div>
+                <select class="detail-select" data-field="method">${methods.map(m => `<option${m===curMethod?" selected":""}>${m}</option>`).join("")}</select></div>`;
+            html += inputRow("url", "URL", step.url || "");
+            html += numberRow("delay", "Delay (seconds)", step.delay || 0);
+            html += dropdownRow("continue_on_error", "Continue on Error", step.continue_on_error);
+            html += editableRow("headers", "Headers", step.headers && Object.keys(step.headers).length ? JSON.stringify(step.headers, null, 2) : "{}");
+
+            if (curMethod !== "GET" && curMethod !== "HEAD" && curMethod !== "OPTIONS") {
+                html += editableRow("payload", "Payload", step.payload ? JSON.stringify(step.payload, null, 2) : "");
+                html += editableRow("unique_fields", "Unique Fields", step.unique_fields ? JSON.stringify(step.unique_fields, null, 2) : "");
+                html += editableRow("files", "Files", step.files ? JSON.stringify(step.files, null, 2) : "");
+            }
+
+            // Print Keys — structured list
+            html += buildListField("print_keys", "Print Keys", step.print_keys || [], "e.g. leadId");
+
+            // Polling — structured
+            const p = (step.has_polling && step.polling) ? step.polling : null;
+            html += buildToggleSection("polling", "Polling", p, buildPollingFields);
+
+            // Eval Keys — structured
+            const hasEval = step.eval_keys && Object.keys(step.eval_keys).length;
+            html += buildToggleSection("eval", "Eval Keys", hasEval ? step : null, buildEvalFields);
         }
 
         detailBody.innerHTML = html;
+        wireToggleSections();
+        wireListFields();
         detailOverlay.classList.remove("hidden");
     }
 
-    function readonlyRow(label, value) {
-        return `<div class="detail-row">
-            <div class="detail-label">${esc(label)}</div>
-            <div class="detail-value">${esc(String(value))}</div>
+    // ── Field builders ───────────────────────────────────────
+    function inputRow(field, label, value) {
+        return `<div class="detail-row"><div class="detail-label">${esc(label)}</div>
+            <input class="detail-editable-input" data-field="${esc(field)}" value="${esc(String(value))}" spellcheck="false"></div>`;
+    }
+    function numberRow(field, label, value) {
+        return `<div class="detail-row"><div class="detail-label">${esc(label)}</div>
+            <input type="number" class="detail-editable-input" data-field="${esc(field)}" value="${value}" min="0"></div>`;
+    }
+    function dropdownRow(field, label, currentVal) {
+        return `<div class="detail-row"><div class="detail-label">${esc(label)}</div>
+            <select class="detail-select" data-field="${esc(field)}">
+                <option value="true"${currentVal?" selected":""}>true</option>
+                <option value="false"${!currentVal?" selected":""}>false</option>
+            </select></div>`;
+    }
+    function editableRow(field, label, value) {
+        return `<div class="detail-row"><div class="detail-label">${esc(label)}</div>
+            <textarea class="detail-editable" data-field="${esc(field)}" spellcheck="false">${esc(String(value))}</textarea></div>`;
+    }
+
+    // List field — add/remove items
+    function buildListField(field, label, items, placeholder) {
+        let html = `<div class="detail-row"><div class="detail-label">${esc(label)}</div>
+            <div class="list-field" data-list-field="${esc(field)}">`;
+        (items || []).forEach(item => {
+            html += `<div class="list-item"><input class="detail-editable-input list-input" value="${esc(item)}" placeholder="${esc(placeholder)}"><button class="btn-icon-only list-remove" title="Remove">×</button></div>`;
+        });
+        html += `<button class="btn btn-ghost btn-sm list-add">+ Add</button></div></div>`;
+        return html;
+    }
+
+    function wireListFields() {
+        detailBody.querySelectorAll(".list-field").forEach(container => {
+            container.querySelector(".list-add").addEventListener("click", () => {
+                const item = document.createElement("div");
+                item.className = "list-item";
+                item.innerHTML = `<input class="detail-editable-input list-input" placeholder=""><button class="btn-icon-only list-remove" title="Remove">×</button>`;
+                container.insertBefore(item, container.querySelector(".list-add"));
+                item.querySelector(".list-remove").addEventListener("click", () => item.remove());
+            });
+            container.querySelectorAll(".list-remove").forEach(btn => {
+                btn.addEventListener("click", () => btn.parentElement.remove());
+            });
+        });
+    }
+
+    // Toggle section — add/remove structured block
+    function buildToggleSection(id, label, data, buildFn) {
+        const hasData = !!data;
+        return `<div class="detail-row"><div class="detail-label">${esc(label)}</div>
+            <div class="toggle-section" id="${id}-section">
+                ${hasData ? buildFn(data) : `<div class="polling-empty">Not configured</div>`}
+                <button class="btn btn-ghost btn-sm toggle-btn" data-target="${id}" style="margin-top:0.4rem">${hasData ? "Remove" : "+ Add"}</button>
+            </div></div>`;
+    }
+
+    function wireToggleSections() {
+        detailBody.querySelectorAll(".toggle-btn").forEach(btn => {
+            btn.addEventListener("click", function() {
+                const id = this.dataset.target;
+                const section = document.getElementById(id + "-section");
+                const hasParam = section.querySelector(".polling-param, .eval-param");
+                if (hasParam) {
+                    section.innerHTML = `<div class="polling-empty">Not configured</div><button class="btn btn-ghost btn-sm toggle-btn" data-target="${id}" style="margin-top:0.4rem">+ Add</button>`;
+                } else {
+                    const buildFn = id === "polling" ? buildPollingFields : buildEvalFields;
+                    const defaults = id === "polling"
+                        ? {key_path:"",expected_values:[],interval:10,max_timeout:120}
+                        : {eval_keys:{},eval_condition:"",success_message:"",failure_message:""};
+                    section.innerHTML = buildFn(defaults) + `<button class="btn btn-ghost btn-sm toggle-btn" data-target="${id}" style="margin-top:0.4rem">Remove</button>`;
+                }
+                wireToggleSections();
+            });
+        });
+    }
+
+    function buildPollingFields(p) {
+        return `<div class="polling-param">
+            <label class="poll-label">Key Path</label>
+            <input class="detail-editable-input poll-input" data-poll="key_path" value="${esc(p.key_path || "")}" placeholder="e.g. status or applications.-1.status">
+            <label class="poll-label">Expected Values (comma separated)</label>
+            <input class="detail-editable-input poll-input" data-poll="expected_values" value="${esc((p.expected_values||[]).join(", "))}" placeholder="e.g. APPROVED, COMPLETED">
+            <label class="poll-label">Interval (seconds)</label>
+            <input type="number" class="detail-editable-input poll-input" data-poll="interval" value="${p.interval||10}" min="1">
+            <label class="poll-label">Max Timeout (seconds)</label>
+            <input type="number" class="detail-editable-input poll-input" data-poll="max_timeout" value="${p.max_timeout||120}" min="1">
         </div>`;
     }
 
-    function editableRow(field, label, value) {
-        return `<div class="detail-row">
-            <div class="detail-label">${esc(label)} <span style="color:var(--accent);font-size:0.6rem;">✎ editable</span></div>
-            <textarea class="detail-editable" data-field="${esc(field)}" spellcheck="false">${esc(String(value))}</textarea>
+    function buildEvalFields(s) {
+        const ek = s.eval_keys || {};
+        return `<div class="eval-param">
+            <label class="poll-label">Eval Keys (JSON: alias → path)</label>
+            <textarea class="detail-editable eval-input" data-eval="eval_keys" spellcheck="false">${esc(Object.keys(ek).length ? JSON.stringify(ek, null, 2) : '{\n  "score": "features.SCORE"\n}')}</textarea>
+            <label class="poll-label">Condition (Python expression)</label>
+            <input class="detail-editable-input eval-input" data-eval="eval_condition" value="${esc(s.eval_condition || "")}" placeholder="e.g. score > 0.55">
+            <label class="poll-label">Success Message</label>
+            <input class="detail-editable-input eval-input" data-eval="success_message" value="${esc(s.success_message || "")}" placeholder="Scores above threshold">
+            <label class="poll-label">Failure Message</label>
+            <input class="detail-editable-input eval-input" data-eval="failure_message" value="${esc(s.failure_message || "")}" placeholder="Scores below threshold">
         </div>`;
+    }
+
+    function readonlyRow(label, value) {
+        return `<div class="detail-row"><div class="detail-label">${esc(label)}</div>
+            <div class="detail-value">${esc(String(value))}</div></div>`;
     }
 
     function esc(str) { const d = document.createElement("div"); d.textContent = str; return d.innerHTML; }
@@ -148,24 +253,80 @@
     // ── Save step changes from drawer ────────────────────────
     detailSave.addEventListener("click", async () => {
         if (currentStepIndex < 0) return;
-        const editables = detailBody.querySelectorAll(".detail-editable");
+        const editables = detailBody.querySelectorAll(".detail-editable, .detail-editable-input, .detail-select");
         const updates = {};
 
         for (const el of editables) {
             const field = el.dataset.field;
+            if (!field) continue;
             const raw = el.value.trim();
-            if (field === "url") {
+
+            if (!raw && !["method", "url", "delay", "continue_on_error", "instruction"].includes(field)) continue;
+
+            if (["url", "method", "instruction", "eval_condition", "success_message", "failure_message"].includes(field)) {
                 updates[field] = raw;
+            } else if (field === "delay") {
+                updates[field] = parseInt(raw) || 0;
+            } else if (field === "continue_on_error") {
+                updates[field] = raw === "true";
             } else {
-                // Parse JSON fields
                 try {
                     updates[field] = JSON.parse(raw);
                 } catch (err) {
-                    detailSaveStatus.textContent = `✗ Invalid JSON in ${field}`;
+                    detailSaveStatus.textContent = `Invalid JSON in ${field}`;
                     detailSaveStatus.className = "detail-save-status error";
                     return;
                 }
             }
+        }
+
+        // Collect list fields (print_keys, print_ref)
+        detailBody.querySelectorAll(".list-field").forEach(container => {
+            const field = container.dataset.listField;
+            const items = [];
+            container.querySelectorAll(".list-input").forEach(input => {
+                const v = input.value.trim();
+                if (v) items.push(v);
+            });
+            updates[field] = items.length ? items : null;
+        });
+
+        // Collect polling
+        const pollingParam = detailBody.querySelector(".polling-param");
+        if (pollingParam) {
+            const keyPath = pollingParam.querySelector('[data-poll="key_path"]').value.trim();
+            const evRaw = pollingParam.querySelector('[data-poll="expected_values"]').value.trim();
+            const interval = parseInt(pollingParam.querySelector('[data-poll="interval"]').value) || 10;
+            const maxTimeout = parseInt(pollingParam.querySelector('[data-poll="max_timeout"]').value) || 120;
+            const polling = { interval, max_timeout: maxTimeout };
+            if (keyPath) {
+                polling.key_path = keyPath;
+                polling.expected_values = evRaw ? evRaw.split(",").map(s => s.trim()).filter(Boolean) : [];
+            }
+            updates.polling = polling;
+        } else if (detailBody.querySelector("#polling-section .polling-empty")) {
+            updates.polling = null;
+        }
+
+        // Collect eval fields
+        const evalParam = detailBody.querySelector(".eval-param");
+        if (evalParam) {
+            const ekRaw = evalParam.querySelector('[data-eval="eval_keys"]').value.trim();
+            try {
+                updates.eval_keys = JSON.parse(ekRaw);
+            } catch (err) {
+                detailSaveStatus.textContent = "Invalid JSON in Eval Keys";
+                detailSaveStatus.className = "detail-save-status error";
+                return;
+            }
+            updates.eval_condition = evalParam.querySelector('[data-eval="eval_condition"]').value.trim();
+            updates.success_message = evalParam.querySelector('[data-eval="success_message"]').value.trim();
+            updates.failure_message = evalParam.querySelector('[data-eval="failure_message"]').value.trim();
+        } else if (detailBody.querySelector("#eval-section .polling-empty")) {
+            updates.eval_keys = null;
+            updates.eval_condition = null;
+            updates.success_message = null;
+            updates.failure_message = null;
         }
 
         detailSaveStatus.textContent = "Saving...";
@@ -404,48 +565,76 @@
 
     responseClose.addEventListener("click", () => responsePanel.classList.add("hidden"));
 
-    // ── YAML Editor ──────────────────────────────────────────
-    let editorOpen = false;
-    editorToggle.addEventListener("click", async (e) => {
-        e.preventDefault();
-        if (editorOpen) { editorPanel.classList.add("hidden"); editorOpen = false; return; }
-        try {
-            const res = await fetch(`/api/flow/${FLOW_PATH}/raw`);
-            const data = await res.json();
-            yamlEditor.value = data.content;
-            editorPanel.classList.remove("hidden");
-            editorOpen = true;
-            editorStatus.className = "editor-status"; editorStatus.textContent = "";
-        } catch (err) { alert("Failed to load YAML: " + err.message); }
+    // ── Inline YAML Editor toggle ────────────────────────────
+    const editToggleBtn = document.getElementById("edit-toggle-btn");
+    const editorSaveBtn = document.getElementById("editor-save-btn");
+    const editorCancelBtn = document.getElementById("editor-cancel-btn");
+    const editorStatusEl = document.getElementById("editor-status");
+    const flowViewSection = document.getElementById("flow-view-section");
+    const editorSection = document.getElementById("editor-section");
+    const yamlEditor = document.getElementById("yaml-editor");
+    let editorMode = false;
+
+    editToggleBtn.addEventListener("click", async () => {
+        if (!editorMode) {
+            try {
+                const res = await fetch(`/api/flow/${FLOW_PATH}/raw`);
+                const data = await res.json();
+                yamlEditor.value = data.content;
+            } catch (err) { return; }
+            flowViewSection.classList.add("hidden");
+            editorSection.classList.remove("hidden");
+            editToggleBtn.classList.add("hidden");
+            editorSaveBtn.classList.remove("hidden");
+            editorCancelBtn.classList.remove("hidden");
+            editorMode = true;
+        }
     });
-    editorCancel.addEventListener("click", () => { editorPanel.classList.add("hidden"); editorOpen = false; });
-    editorSave.addEventListener("click", async () => {
-        editorStatus.className = "editor-status"; editorStatus.textContent = "Saving...";
+
+    editorCancelBtn.addEventListener("click", () => {
+        editorSection.classList.add("hidden");
+        flowViewSection.classList.remove("hidden");
+        editToggleBtn.classList.remove("hidden");
+        editorSaveBtn.classList.add("hidden");
+        editorCancelBtn.classList.add("hidden");
+        editorStatusEl.textContent = "";
+        editorMode = false;
+    });
+
+    editorSaveBtn.addEventListener("click", async () => {
+        editorStatusEl.textContent = "Saving...";
+        editorStatusEl.className = "detail-save-status";
         try {
             const res = await fetch(`/api/flow/${FLOW_PATH}/save`, {
-                method: "POST", headers: { "Content-Type": "application/json" },
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ content: yamlEditor.value }),
             });
             const data = await res.json();
             if (data.success) {
-                editorStatus.className = "editor-status success";
-                editorStatus.textContent = "✓ Saved. Reloading...";
-                setTimeout(() => location.reload(), 1500);
+                editorStatusEl.textContent = "Saved";
+                editorStatusEl.className = "detail-save-status success";
+                setTimeout(() => location.reload(), 1000);
             } else {
-                editorStatus.className = "editor-status error";
-                editorStatus.textContent = "✗ " + (data.error || "Save failed");
+                editorStatusEl.textContent = data.error || "Failed";
+                editorStatusEl.className = "detail-save-status error";
             }
         } catch (err) {
-            editorStatus.className = "editor-status error";
-            editorStatus.textContent = "✗ " + err.message;
+            editorStatusEl.textContent = err.message;
+            editorStatusEl.className = "detail-save-status error";
         }
     });
+
     yamlEditor.addEventListener("keydown", (e) => {
         if (e.key === "Tab") {
             e.preventDefault();
             const s = yamlEditor.selectionStart, end = yamlEditor.selectionEnd;
             yamlEditor.value = yamlEditor.value.substring(0, s) + "  " + yamlEditor.value.substring(end);
             yamlEditor.selectionStart = yamlEditor.selectionEnd = s + 2;
+        }
+        if ((e.ctrlKey || e.metaKey) && e.key === "s") {
+            e.preventDefault();
+            editorSaveBtn.click();
         }
     });
 

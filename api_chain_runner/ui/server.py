@@ -48,6 +48,7 @@ def _discover_flows(base_dir: str) -> list[dict]:
                     "abs_path": os.path.abspath(filepath),
                     "step_count": len(chain),
                     "folder": folder,
+                    "has_docs": os.path.isfile(os.path.splitext(filepath)[0] + ".doc.yaml"),
                 })
             except Exception:
                 continue
@@ -77,11 +78,17 @@ def _parse_chain(filepath: str) -> dict:
             "has_unique_fields": "unique_fields" in step,
             "has_condition": "condition" in step,
             "manual": step.get("manual", False),
+            "instruction": step.get("instruction", ""),
+            "print_ref": step.get("print_ref", []),
             "headers": step.get("headers", {}),
             "print_keys": step.get("print_keys", []),
             "payload": step.get("payload"),
             "unique_fields": step.get("unique_fields"),
             "files": step.get("files"),
+            "eval_keys": step.get("eval_keys"),
+            "eval_condition": step.get("eval_condition", ""),
+            "success_message": step.get("success_message", ""),
+            "failure_message": step.get("failure_message", ""),
         }
         if "polling" in step:
             p = step["polling"]
@@ -281,6 +288,15 @@ def flow_view(flow_path):
     return render_template("flow.html", chain=chain_data, flow_path=flow_path)
 
 
+@app.route("/flow/<path:flow_path>/editor")
+def flow_editor_view(flow_path):
+    abs_path = os.path.join(_flow_dir, flow_path)
+    if not os.path.isfile(abs_path):
+        return "Flow not found", 404
+    flow_name = Path(flow_path).stem
+    return render_template("editor.html", flow_path=flow_path, flow_name=flow_name)
+
+
 @app.route("/api/flows")
 def api_flows():
     return jsonify(_discover_flows(_flow_dir))
@@ -349,7 +365,7 @@ def api_step_update(flow_path, step_index):
 
         step = chain[step_index]
         # Apply updates to allowed fields
-        allowed = {"payload", "headers", "url", "unique_fields", "delay", "continue_on_error"}
+        allowed = {"payload", "headers", "url", "unique_fields", "delay", "continue_on_error", "method", "files", "print_keys", "polling", "eval_keys", "eval_condition", "success_message", "failure_message", "manual", "instruction", "print_ref"}
         for key, value in updates.items():
             if key in allowed:
                 if value is None or value == "":
@@ -468,6 +484,104 @@ def api_run_resume(run_id):
         return jsonify({"error": "run not found or already finished"}), 404
     runner.pause_controller._paused.clear()
     return jsonify({"success": True, "paused": False})
+
+
+# ── Flow Documentation ────────────────────────────────────────────────
+
+def _doc_path_for(flow_path: str) -> str:
+    """Return the .doc.yaml path for a given flow path."""
+    base = os.path.splitext(flow_path)[0]
+    return base + ".doc.yaml"
+
+
+def _get_doc(flow_path: str) -> dict | None:
+    """Load the doc file for a flow, or return None."""
+    dp = os.path.join(_flow_dir, _doc_path_for(flow_path))
+    if not os.path.isfile(dp):
+        return None
+    try:
+        with open(dp, "r", encoding="utf-8") as f:
+            return yaml.safe_load(f) or {}
+    except Exception:
+        return None
+
+
+def _default_doc(flow_name: str) -> dict:
+    """Return a default doc template."""
+    return {
+        "title": flow_name.replace("_", " ").replace("-", " ").title(),
+        "description": "",
+        "authors": [{"name": "", "email": "", "role": ""}],
+        "group": "",
+        "tags": [],
+        "context": "",
+        "images": [],
+        "changelog": [],
+    }
+
+
+@app.route("/flow/<path:flow_path>/docs")
+def flow_docs_view(flow_path):
+    """Render the docs page for a flow."""
+    abs_path = os.path.join(_flow_dir, flow_path)
+    if not os.path.isfile(abs_path):
+        return "Flow not found", 404
+    flow_name = Path(flow_path).stem
+    doc = _get_doc(flow_path) or _default_doc(flow_name)
+    return render_template("docs.html", doc=doc, flow_path=flow_path, flow_name=flow_name)
+
+
+@app.route("/api/flow/<path:flow_path>/docs")
+def api_flow_docs(flow_path):
+    """Get doc data for a flow."""
+    doc = _get_doc(flow_path)
+    if doc is None:
+        return jsonify({"exists": False, "doc": _default_doc(Path(flow_path).stem)})
+    return jsonify({"exists": True, "doc": doc})
+
+
+@app.route("/api/flow/<path:flow_path>/docs/save", methods=["POST"])
+def api_flow_docs_save(flow_path):
+    """Save doc data for a flow."""
+    data = request.get_json()
+    doc = data.get("doc", {})
+    dp = os.path.join(_flow_dir, _doc_path_for(flow_path))
+    try:
+        os.makedirs(os.path.dirname(dp), exist_ok=True)
+        with open(dp, "w", encoding="utf-8") as f:
+            yaml.dump(doc, f, default_flow_style=False, allow_unicode=True, sort_keys=False)
+        return jsonify({"success": True})
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+@app.route("/api/flow/<path:flow_path>/docs/upload", methods=["POST"])
+def api_flow_docs_upload(flow_path):
+    """Upload an image for a flow's documentation."""
+    if "file" not in request.files:
+        return jsonify({"error": "No file provided"}), 400
+    f = request.files["file"]
+    if not f.filename:
+        return jsonify({"error": "Empty filename"}), 400
+
+    flow_stem = Path(flow_path).stem
+    docs_dir = os.path.join(_flow_dir, "docs", flow_stem)
+    os.makedirs(docs_dir, exist_ok=True)
+
+    # Sanitize filename
+    safe_name = f.filename.replace(" ", "_").replace("/", "_")
+    save_path = os.path.join(docs_dir, safe_name)
+    f.save(save_path)
+
+    rel_path = f"docs/{flow_stem}/{safe_name}"
+    return jsonify({"success": True, "path": rel_path})
+
+
+@app.route("/docs/<path:img_path>")
+def serve_doc_image(img_path):
+    """Serve uploaded doc images."""
+    from flask import send_from_directory
+    return send_from_directory(os.path.join(_flow_dir, "docs"), img_path)
 
 
 def start_server(flow_dir: str = ".", host: str = "127.0.0.1", port: int = 5656):

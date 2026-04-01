@@ -31,8 +31,8 @@
                 <a href="#" class="nav-item active">
                     <svg class="icon"><use href="#i-flow"/></svg> {{ chain.name }}
                 </a>
-                <a href="#" class="nav-item" id="nav-editor-toggle">
-                    <svg class="icon"><use href="#i-edit"/></svg> Editor
+                <a href="/flow/{{ flow_path }}/docs" class="nav-item">
+                    <svg class="icon"><use href="#i-file"/></svg> Documentation
                 </a>
             </div>
         </nav>
@@ -47,6 +47,15 @@
                 <span>{{ chain.name }}</span>
             </div>
             <div class="topbar-actions">
+                <button id="edit-toggle-btn" class="btn btn-ghost">
+                    <svg class="icon icon-sm"><use href="#i-edit"/></svg> Edit YAML
+                </button>
+                <button id="editor-save-btn" class="btn btn-subtle hidden">
+                    <svg class="icon icon-sm"><use href="#i-save"/></svg> Save
+                </button>
+                <button id="editor-cancel-btn" class="btn btn-ghost hidden">Cancel</button>
+                <span id="editor-status" class="detail-save-status"></span>
+                <span class="topbar-sep"></span>
                 <button id="run-btn" class="btn btn-primary">
                     <svg class="icon icon-sm"><use href="#i-play"/></svg> Run Chain
                 </button>
@@ -60,45 +69,37 @@
             </div>
         </div>
 
-        <div class="page-content flow-page-content">
-            <div class="flow-info-bar">
-                <div class="info-chip">
-                    <span class="chip-label">Steps</span>
-                    <span class="chip-value">{{ chain.steps | length }}</span>
-                </div>
-                {% if chain.variables %}
-                <div class="info-chip">
-                    <span class="chip-label">Variables</span>
-                    <span class="chip-value">{{ chain.variables | join(', ') }}</span>
-                </div>
-                {% endif %}
-            </div>
-
-            <div class="flow-canvas-wrapper">
-                <div id="flow-canvas" class="flow-canvas"></div>
-            </div>
-
-            <div id="response-panel" class="response-panel hidden">
-                <div class="response-header">
-                    <h3>Step Responses</h3>
-                    <button id="response-close" class="btn-icon-only"><svg class="icon"><use href="#i-x"/></svg></button>
-                </div>
-                <div id="response-list" class="response-list"></div>
-            </div>
-
-            <div id="editor-panel" class="editor-panel hidden">
-                <div class="editor-header">
-                    <h3>Edit Flow — {{ flow_path }}</h3>
-                    <div class="editor-actions">
-                        <button id="editor-save" class="btn btn-subtle btn-sm">
-                            <svg class="icon icon-sm"><use href="#i-save"/></svg> Save
-                        </button>
-                        <button id="editor-cancel" class="btn btn-ghost btn-sm">Cancel</button>
+        <div class="page-content flow-page-content" style="display:flex;flex-direction:column;flex:1">
+            <div id="flow-view-section">
+                <div class="flow-info-bar">
+                    <div class="info-chip">
+                        <span class="chip-label">Steps</span>
+                        <span class="chip-value">{{ chain.steps | length }}</span>
                     </div>
+                    {% if chain.variables %}
+                    <div class="info-chip">
+                        <span class="chip-label">Variables</span>
+                        <span class="chip-value">{{ chain.variables | join(', ') }}</span>
+                    </div>
+                    {% endif %}
                 </div>
-                <div class="editor-status" id="editor-status"></div>
-                <textarea id="yaml-editor" class="yaml-editor" spellcheck="false"></textarea>
+                <div class="flow-canvas-wrapper">
+                    <div id="flow-canvas" class="flow-canvas"></div>
+                </div>
+
+                <div id="response-panel" class="response-panel hidden">
+                    <div class="response-header">
+                        <h3>Step Responses</h3>
+                        <button id="response-close" class="btn-icon-only"><svg class="icon"><use href="#i-x"/></svg></button>
+                    </div>
+                    <div id="response-list" class="response-list"></div>
+                </div>
             </div>
+
+            <div id="editor-section" class="hidden" style="flex:1;display:flex;flex-direction:column;margin:-1.5rem -2rem;min-height:0">
+                <textarea id="yaml-editor" class="yaml-editor" style="flex:1;min-height:0;border-radius:0" spellcheck="false"></textarea>
+            </div>
+
         </div>
     </main>
 

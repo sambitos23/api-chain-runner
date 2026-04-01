@@ -149,13 +149,66 @@ Authorization: "Bearer ${vars.my_token}"
 
 ### Environment Variables
 
-Use `${ENV:VAR_NAME}` in your YAML to pull from environment variables:
+Use `${ENV:VAR_NAME}` in your YAML to reference environment variables. This keeps secrets like API keys and tokens out of your YAML files.
 
 ```yaml
-url: "https://api.example.com/auth?key=${ENV:API_KEY}"
-payload:
-  email: "${ENV:AUTH_EMAIL}"
+variables:
+  my_token: "${ENV:MY_TOKEN}"
+  firebase_key: "${ENV:FIREBASE_KEY}"
+
+chain:
+  - name: auth
+    url: "https://api.example.com/auth?key=${ENV:API_KEY}"
+    method: POST
+    payload:
+      email: "${ENV:AUTH_EMAIL}"
 ```
+
+#### `.env` File (Auto-Loaded)
+
+Create a `.env` file in your project directory with key-value pairs:
+
+```
+# .env
+MY_TOKEN="eyJhbGciOi..."
+FIREBASE_KEY="AIzaSy..."
+API_KEY="your-api-key"
+AUTH_EMAIL="user@example.com"
+```
+
+The `.env` file is auto-discovered from these locations (in order):
+1. Same directory as the YAML config file
+2. One level up from the config file (project root)
+3. Current working directory
+
+No extra flags needed — just place the `.env` file and run:
+
+```bash
+# CLI — auto-loads .env
+python -m api_chain_runner my_chain.yaml
+
+# UI — auto-loads .env from flow dir and project root
+python -m api_chain_runner --ui flow/
+```
+
+#### Custom `.env` File
+
+Use `-e` / `--env` to specify a different env file:
+
+```bash
+# CLI with custom env file
+python -m api_chain_runner my_chain.yaml -e production.env
+
+# UI with custom env file
+python -m api_chain_runner --ui flow/ -e staging.env
+```
+
+#### Rules
+
+- `.env` values do **not** override existing shell environment variables
+- Lines starting with `#` are treated as comments
+- Values can be quoted (`"value"` or `'value'`) or unquoted
+- If a `${ENV:VAR_NAME}` placeholder can't be resolved, it's left as-is so you get a clear error
 
 ### Unique Data Generation
 
@@ -195,7 +248,7 @@ unique_fields:
 
 ### Custom Generators (Plugin System)
 
-If you're using `api-chain-runner` as a library, you can register your own generator functions. Once registered, they work in YAML `unique_fields` just like the built-in ones.
+If you're using `python -m api_chain_runner` as a library, you can register your own generator functions. Once registered, they work in YAML `unique_fields` just like the built-in ones.
 
 ```python
 import random
@@ -463,7 +516,7 @@ This opens a local web server at `http://127.0.0.1:5656` with:
 - **Create New Flows** — click "New Flow" on the dashboard to create a new chain with a name, optional folder, and initial steps
 - **Dark / Light Mode** — toggle between dark and light themes; preference is persisted across sessions
 
-The UI is a built-in feature of the package — anyone who installs `api-chain-runner` gets it with no extra setup.
+The UI is a built-in feature of the package — anyone who installs `python -m api_chain_runner` gets it with no extra setup.
 
 ## Architecture
 

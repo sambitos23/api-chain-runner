@@ -158,11 +158,8 @@ def main(argv: list[str] | None = None) -> None:
     if not args.config:
         parser.error("config is required when not using --ui")
 
-    # Pre-process config to resolve ${ENV:...} placeholders
-    processed_config = _preprocess_config(args.config)
-
     try:
-        runner = ChainRunner(processed_config)
+        runner = ChainRunner(args.config, env_file=args.env)
 
         # Override output path / format if the user specified them
         if args.output or args.format != "csv":
@@ -172,15 +169,8 @@ def main(argv: list[str] | None = None) -> None:
             runner.executor.logger = runner.logger
 
         result = runner.run()
-    finally:
-        # Clean up temp file if we created one
-        if processed_config != args.config:
-            import os as _os
-
-            try:
-                _os.unlink(processed_config)
-            except OSError:
-                pass
+    except Exception:
+        raise
 
     # Print summary to stdout
     print(

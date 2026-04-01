@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Edit {{ flow_name }} — API Chain Runner</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    {% include 'icons.html' %}
+    <aside class="sidebar">
+        <div class="sidebar-header">
+            <div class="logo">
+                <svg class="icon icon-logo"><use href="#i-chain"/></svg>
+                <span class="logo-text">Chain Runner</span>
+            </div>
+            <button class="theme-toggle" id="theme-toggle" title="Toggle theme">
+                <span class="theme-icon-dark"><svg class="icon"><use href="#i-moon"/></svg></span>
+                <span class="theme-icon-light"><svg class="icon"><use href="#i-sun"/></svg></span>
+            </button>
+        </div>
+        <nav class="sidebar-nav">
+            <div class="nav-section">
+                <span class="nav-label">Navigation</span>
+                <a href="/" class="nav-item"><svg class="icon"><use href="#i-grid"/></svg> Dashboard</a>
+            </div>
+            <div class="nav-section">
+                <span class="nav-label">This Flow</span>
+                <a href="/flow/{{ flow_path }}" class="nav-item"><svg class="icon"><use href="#i-flow"/></svg> Flow View</a>
+                <a href="/flow/{{ flow_path }}/docs" class="nav-item"><svg class="icon"><use href="#i-file"/></svg> Documentation</a>
+                <a href="#" class="nav-item active"><svg class="icon"><use href="#i-edit"/></svg> Editor</a>
+            </div>
+        </nav>
+    </aside>
+    <main class="main-content dot-bg">
+        <div class="topbar">
+            <div class="breadcrumb">
+                <svg class="icon icon-sm"><use href="#i-chain"/></svg>
+                <a href="/">Flows</a><span class="bc-sep">/</span>
+                <a href="/flow/{{ flow_path }}">{{ flow_name }}</a><span class="bc-sep">/</span>
+                <span>Editor</span>
+            </div>
+            <div class="topbar-actions">
+                <button id="editor-save" class="btn btn-subtle">
+                    <svg class="icon icon-sm"><use href="#i-save"/></svg> Save
+                </button>
+                <span id="editor-status" class="detail-save-status"></span>
+            </div>
+        </div>
+
+        <div class="page-content" style="padding:0;flex:1;display:flex;flex-direction:column">
+            <textarea id="yaml-editor" class="yaml-editor" style="flex:1;min-height:0" spellcheck="false"></textarea>
+        </div>
+    </main>
+    <script>const FLOW_PATH = {{ flow_path | tojson }};</script>
+    <script src="{{ url_for('static', filename='theme.js') }}"></script>
+    <script>
+    (function() {
+        const editor = document.getElementById("yaml-editor");
+        const saveBtn = document.getElementById("editor-save");
+        const status = document.getElementById("editor-status");
+
+        // Load content
+        fetch(`/api/flow/${FLOW_PATH}/raw`).then(r => r.json()).then(data => {
+            editor.value = data.content;
+        });
+
+        // Tab key support
+        editor.addEventListener("keydown", (e) => {
+            if (e.key === "Tab") {
+                e.preventDefault();
+                const s = editor.selectionStart, end = editor.selectionEnd;
+                editor.value = editor.value.substring(0, s) + "  " + editor.value.substring(end);
+                editor.selectionStart = editor.selectionEnd = s + 2;
+            }
+        });
+
+        // Ctrl+S / Cmd+S
+        document.addEventListener("keydown", (e) => {
+            if ((e.ctrlKey || e.metaKey) && e.key === "s") {
+                e.preventDefault();
+                saveBtn.click();
+            }
+        });
+
+        saveBtn.addEventListener("click", async () => {
+            status.textContent = "Saving...";
+            status.className = "detail-save-status";
+            try {
+                const res = await fetch(`/api/flow/${FLOW_PATH}/save`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ content: editor.value }),
+                });
+                const data = await res.json();
+                if (data.success) {
+                    status.textContent = "Saved";
+                    status.className = "detail-save-status success";
+                } else {
+                    status.textContent = data.error || "Failed";
+                    status.className = "detail-save-status error";
+                }
+            } catch (err) {
+                status.textContent = err.message;
+                status.className = "detail-save-status error";
+            }
+        });
+    })();
+    </script>
+</body>
+</html>

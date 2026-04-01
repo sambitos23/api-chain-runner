@@ -65,7 +65,7 @@
             </div>
             <div class="flow-grid">
                 {% for flow in flows %}
-                <a href="/flow/{{ flow.path }}" class="flow-card">
+                <div class="flow-card" onclick="window.location='/flow/{{ flow.path }}'">
                     <div class="card-top">
                         <div class="card-icon"><svg class="icon icon-lg"><use href="#i-file"/></svg></div>
                         <div class="card-meta">
@@ -78,9 +78,12 @@
                             <span class="stat-value">{{ flow.step_count }}</span>
                             <span class="stat-label">steps</span>
                         </div>
-                        <svg class="icon icon-sm card-arrow"><use href="#i-arrow-right"/></svg>
+                        <div class="card-actions">
+                            {% if flow.has_docs %}<a href="/flow/{{ flow.path }}/docs" class="card-doc-link" onclick="event.stopPropagation()">Docs</a>{% endif %}
+                            <svg class="icon icon-sm card-arrow"><use href="#i-arrow-right"/></svg>
+                        </div>
                     </div>
-                </a>
+                </div>
                 {% endfor %}
             </div>
             {% if not flows %}
@@ -98,9 +101,7 @@
         <div class="modal-panel">
             <div class="modal-header">
                 <h3>Create New Flow</h3>
-                <button class="btn-icon-only" id="create-modal-close">
-                    <svg class="icon"><use href="#i-x"/></svg>
-                </button>
+                <button class="btn-icon-only" id="create-modal-close"><svg class="icon"><use href="#i-x"/></svg></button>
             </div>
             <div class="modal-body">
                 <label class="form-label">Flow Name</label>
