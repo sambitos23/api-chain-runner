@@ -194,8 +194,8 @@ def _run_chain_thread(run_id: str, filepath: str):
                     else:
                         resp_preview = str(resp_body)
                     # Truncate large responses for UI
-                    if len(resp_preview) > 3000:
-                        resp_preview = resp_preview[:3000] + "\n... (truncated)"
+                    if len(resp_preview) > 8000:
+                        resp_preview = resp_preview[:8000] + "\n... (truncated)"
 
                     step_result = {
                         "step_name": result.step_name,
@@ -222,6 +222,20 @@ def _run_chain_thread(run_id: str, filepath: str):
                             for kp in step.print_keys:
                                 printed[kp] = "—"
                         step_result["printed_keys"] = printed
+
+                    # Extract eval results
+                    if result.eval_result:
+                        step_result["eval_result"] = {
+                            k: str(v) for k, v in result.eval_result.items()
+                            if not k.startswith("_")
+                        }
+                        eval_status = result.eval_result.get("_eval_result")
+                        eval_msg = result.eval_result.get("_eval_message")
+                        if eval_status and eval_msg:
+                            step_result["eval_message"] = {
+                                "type": "success" if eval_status == "SUCCESS" else "failure",
+                                "text": eval_msg,
+                            }
 
                     if not result.success and not step.continue_on_error:
                         with _run_lock:

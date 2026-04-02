@@ -45,14 +45,10 @@
             if (step.delay > 0) tags.push(`${step.delay}s`);
             if (!step.continue_on_error) tags.push("stop-on-fail");
 
-            const pkHint = (step.print_keys && step.print_keys.length)
-                ? `<div class="step-pk-hint">📋 ${step.print_keys.map(k => esc(k)).join(", ")}</div>` : "";
-
             box.innerHTML = `
                 <span class="method-badge">${esc(step.method.toUpperCase())}</span>
                 <div class="step-name">${esc(step.name)}</div>
                 ${tags.length ? `<div class="step-tags">${tags.map(t => `<span class="tag">${esc(t)}</span>`).join("")}</div>` : ""}
-                ${pkHint}
             `;
 
             row.appendChild(box);
@@ -487,22 +483,70 @@
                     sc.textContent = r.status_code;
                     box.appendChild(sc);
                 }
-                // Show printed key values — only add once, skip if already present
-                if (r.printed_keys && Object.keys(r.printed_keys).length && !row.querySelector(".print-keys-connector")) {
-                    const pkWrap = document.createElement("div");
-                    pkWrap.className = "print-keys-connector";
-                    const line = document.createElement("div");
-                    line.className = "pk-line";
-                    const pkBox = document.createElement("div");
-                    pkBox.className = "pk-box";
-                    let html = "";
-                    for (const [k, v] of Object.entries(r.printed_keys)) {
-                        html += `<div class="pk-entry"><span class="pk-key-name">${esc(k)}</span><span class="pk-key-val">${esc(v || "null")}</span></div>`;
+
+                // Side connector — only add once
+                if (!row.querySelector(".side-connector")) {
+                    const hasPK = r.printed_keys && Object.keys(r.printed_keys).some(k => r.printed_keys[k] && r.printed_keys[k] !== "—" && r.printed_keys[k] !== "null");
+                    const hasEval = r.eval_result && Object.keys(r.eval_result).length;
+                    const hasMsg = r.eval_message;
+
+                    if (hasPK || hasEval || hasMsg) {
+                        const wrap = document.createElement("div");
+                        wrap.className = "side-connector";
+                        wrap.addEventListener("click", (e) => e.stopPropagation());
+
+                        const line = document.createElement("div");
+                        line.className = "pk-line";
+                        wrap.appendChild(line);
+
+                        const content = document.createElement("div");
+                        content.className = "side-content";
+
+                        // Print keys box
+                        if (hasPK) {
+                            const pkBox = document.createElement("div");
+                            pkBox.className = "pk-box";
+                            for (const [k, v] of Object.entries(r.printed_keys)) {
+                                if (v === undefined || v === null || v === "—") continue;
+                                const entry = document.createElement("div");
+                                entry.className = "pk-entry";
+                                const displayKey = k.length > 30 ? "..." + k.slice(-27) : k;
+                                entry.innerHTML = `<span class="pk-key-name" title="${esc(k)}">${esc(displayKey)}</span><span class="pk-key-val" title="${esc(v)} — click to copy">${esc(v)}</span>`;
+                                entry.querySelector(".pk-key-val").addEventListener("click", function() {
+                                    navigator.clipboard.writeText(v).then(() => {
+                                        this.classList.add("pk-copied");
+                                        setTimeout(() => this.classList.remove("pk-copied"), 1200);
+                                    });
+                                });
+                                pkBox.appendChild(entry);
+                            }
+                            content.appendChild(pkBox);
+                        }
+
+                        // Eval box (separate from print keys)
+                        if (hasEval || hasMsg) {
+                            const evalBox = document.createElement("div");
+                            evalBox.className = "eval-box";
+                            if (hasEval) {
+                                for (const [k, v] of Object.entries(r.eval_result)) {
+                                    const entry = document.createElement("div");
+                                    entry.className = "eval-entry";
+                                    entry.innerHTML = `<span class="eval-key">${esc(k)}</span><span class="eval-val">${esc(v)}</span>`;
+                                    evalBox.appendChild(entry);
+                                }
+                            }
+                            if (hasMsg) {
+                                const msg = document.createElement("div");
+                                msg.className = `eval-msg eval-msg-${r.eval_message.type}`;
+                                msg.textContent = r.eval_message.text;
+                                evalBox.appendChild(msg);
+                            }
+                            content.appendChild(evalBox);
+                        }
+
+                        wrap.appendChild(content);
+                        row.appendChild(wrap);
                     }
-                    pkBox.innerHTML = html;
-                    pkWrap.appendChild(line);
-                    pkWrap.appendChild(pkBox);
-                    row.appendChild(pkWrap);
                 }
             } else if (data.status === "running" && i === results.length) {
                 box.classList.add("state-running");
@@ -548,9 +592,24 @@
 
             const tdBody = document.createElement("td");
             tdBody.className = "col-body";
+            const bodyText = r.response_body || r.error || (r.manual ? "Manual step" : r.skipped ? "Skipped" : "—");
+            const preWrap = document.createElement("div");
+            preWrap.className = "response-pre-wrap";
             const pre = document.createElement("pre");
-            pre.textContent = r.response_body || r.error || (r.manual ? "Manual step" : r.skipped ? "Skipped" : "—");
-            tdBody.appendChild(pre);
+            pre.textContent = bodyText;
+            const copyIcon = document.createElement("span");
+            copyIcon.className = "response-copy-icon";
+            copyIcon.textContent = "⧉";
+            copyIcon.title = "Copy response";
+            copyIcon.addEventListener("click", () => {
+                navigator.clipboard.writeText(bodyText).then(() => {
+                    copyIcon.textContent = "✓";
+                    setTimeout(() => { copyIcon.textContent = "⧉"; }, 1500);
+                });
+            });
+            preWrap.appendChild(pre);
+            preWrap.appendChild(copyIcon);
+            tdBody.appendChild(preWrap);
 
             tr.appendChild(tdStep);
             tr.appendChild(tdStatus);
