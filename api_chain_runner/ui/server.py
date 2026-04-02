@@ -199,14 +199,7 @@ def _run_chain_thread(run_id: str, filepath: str):
                         time.sleep(step.delay)
 
                     result = runner.executor.execute(step)
-                    resp_body = result.response_body
-                    if isinstance(resp_body, dict):
-                        resp_preview = json.dumps(resp_body, indent=2, default=str)
-                    else:
-                        resp_preview = str(resp_body)
-                    # Truncate large responses for UI
-                    if len(resp_preview) > 8000:
-                        resp_preview = resp_preview[:8000] + "\n... (truncated)"
+                    resp_preview = json.dumps(result.response_body, indent=2, default=str) if isinstance(result.response_body, (dict, list)) else str(result.response_body)
 
                     step_result = {
                         "step_name": result.step_name,

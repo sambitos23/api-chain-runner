@@ -486,7 +486,10 @@
 
                 // Side connector — only add once
                 if (!row.querySelector(".side-connector")) {
-                    const hasPK = r.printed_keys && Object.keys(r.printed_keys).some(k => r.printed_keys[k] && r.printed_keys[k] !== "—" && r.printed_keys[k] !== "null");
+                    const hasPK = r.printed_keys && Object.keys(r.printed_keys).some(k => {
+                        const v = r.printed_keys[k];
+                        return v !== undefined && v !== null && v !== "" && v !== "—" && v !== "null";
+                    });
                     const hasEval = r.eval_result && Object.keys(r.eval_result).length;
                     const hasMsg = r.eval_message;
 
