@@ -124,8 +124,8 @@
     </div>
 
     <script>
-        const CHAIN_DATA = {{ chain | tojson }};
-        const FLOW_PATH = {{ flow_path | tojson }};
+        const CHAIN_DATA = JSON.parse('{{ chain | tojson | safe }}');
+        const FLOW_PATH = '{{ flow_path }}';
     </script>
     <script src="{{ url_for('static', filename='theme.js') }}"></script>
     <script src="{{ url_for('static', filename='flow.js') }}"></script>

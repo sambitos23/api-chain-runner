@@ -52,7 +52,7 @@
 
         <div id="monaco-container" style="flex:1;min-height:0"></div>
     </main>
-    <script>const FLOW_PATH = {{ flow_path | tojson }};</script>
+    <script>const FLOW_PATH = '{{ flow_path }}';</script>
     <script src="{{ url_for('static', filename='theme.js') }}"></script>
     <script>
     (function() {
