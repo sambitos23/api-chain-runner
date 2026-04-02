@@ -631,15 +631,53 @@
     const editorStatusEl = document.getElementById("editor-status");
     const flowViewSection = document.getElementById("flow-view-section");
     const editorSection = document.getElementById("editor-section");
-    const yamlEditor = document.getElementById("yaml-editor");
     let editorMode = false;
+    // ── Monaco Editor Setup ────────────────────────────
+    let monacoEditor;
+    const monacoContainer = document.getElementById("monaco-container");
+
+    if (window.require) {
+        require.config({ paths: { 'vs': 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.45.0/min/vs' } });
+        require(['vs/editor/editor.main'], function() {
+            const isDark = document.documentElement.getAttribute('data-theme') === 'dark' || !document.documentElement.hasAttribute('data-theme');
+            monacoEditor = monaco.editor.create(monacoContainer, {
+                value: '',
+                language: 'yaml',
+                theme: isDark ? 'vs-dark' : 'vs',
+                automaticLayout: true,
+                fontSize: 13,
+                fontFamily: "'SF Mono', 'Fira Code', 'Cascadia Code', monospace",
+                lineHeight: 20,
+                minimap: { enabled: false },
+                scrollBeyondLastLine: false,
+                padding: { top: 10 }
+            });
+
+            // Sync theme when data-theme attribute changes
+            const observer = new MutationObserver(() => {
+                const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+                monaco.editor.setTheme(isDark ? 'vs-dark' : 'vs');
+            });
+            observer.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+            window.addEventListener("keydown", (e) => {
+                if ((e.ctrlKey || e.metaKey) && e.key === "s") {
+                    if (editorMode) {
+                        e.preventDefault();
+                        editorSaveBtn.click();
+                    }
+                }
+            });
+        });
+    }
 
     editToggleBtn.addEventListener("click", async () => {
         if (!editorMode) {
             try {
                 const res = await fetch(`/api/flow/${FLOW_PATH}/raw`);
                 const data = await res.json();
-                yamlEditor.value = data.content;
+                if (monacoEditor) {
+                  monacoEditor.setValue(data.content);
+                }
             } catch (err) { return; }
             flowViewSection.classList.add("hidden");
             editorSection.classList.remove("hidden");
@@ -661,13 +699,15 @@
     });
 
     editorSaveBtn.addEventListener("click", async () => {
+        if (!monacoEditor) return;
         editorStatusEl.textContent = "Saving...";
         editorStatusEl.className = "detail-save-status";
         try {
+            const content = monacoEditor.getValue();
             const res = await fetch(`/api/flow/${FLOW_PATH}/save`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ content: yamlEditor.value }),
+                body: JSON.stringify({ content }),
             });
             const data = await res.json();
             if (data.success) {
@@ -681,19 +721,6 @@
         } catch (err) {
             editorStatusEl.textContent = err.message;
             editorStatusEl.className = "detail-save-status error";
-        }
-    });
-
-    yamlEditor.addEventListener("keydown", (e) => {
-        if (e.key === "Tab") {
-            e.preventDefault();
-            const s = yamlEditor.selectionStart, end = yamlEditor.selectionEnd;
-            yamlEditor.value = yamlEditor.value.substring(0, s) + "  " + yamlEditor.value.substring(end);
-            yamlEditor.selectionStart = yamlEditor.selectionEnd = s + 2;
-        }
-        if ((e.ctrlKey || e.metaKey) && e.key === "s") {
-            e.preventDefault();
-            editorSaveBtn.click();
         }
     });
 

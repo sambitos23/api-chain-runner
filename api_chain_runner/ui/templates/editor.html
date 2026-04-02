@@ -5,6 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Edit {{ flow_name }} — API Chain Runner</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <!-- Load Monaco Editor -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.45.0/min/vs/loader.min.js"></script>
 </head>
 <body>
     {% include 'icons.html' %}
@@ -48,49 +50,66 @@
             </div>
         </div>
 
-        <div class="page-content" style="padding:0;flex:1;display:flex;flex-direction:column">
-            <textarea id="yaml-editor" class="yaml-editor" style="flex:1;min-height:0" spellcheck="false"></textarea>
-        </div>
+        <div id="monaco-container" style="flex:1;min-height:0"></div>
     </main>
     <script>const FLOW_PATH = {{ flow_path | tojson }};</script>
     <script src="{{ url_for('static', filename='theme.js') }}"></script>
     <script>
     (function() {
-        const editor = document.getElementById("yaml-editor");
+        const container = document.getElementById("monaco-container");
         const saveBtn = document.getElementById("editor-save");
         const status = document.getElementById("editor-status");
+        let monacoEditor;
 
-        // Load content
-        fetch(`/api/flow/${FLOW_PATH}/raw`).then(r => r.json()).then(data => {
-            editor.value = data.content;
-        });
+        require.config({ paths: { 'vs': 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.45.0/min/vs' } });
+        require(['vs/editor/editor.main'], function() {
+            // Check theme
+            const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+            
+            monacoEditor = monaco.editor.create(container, {
+                value: '',
+                language: 'yaml',
+                theme: isDark ? 'vs-dark' : 'vs',
+                automaticLayout: true,
+                fontSize: 14,
+                fontFamily: "'SF Mono', 'Fira Code', 'Cascadia Code', monospace",
+                lineHeight: 22,
+                minimap: { enabled: true },
+                scrollBeyondLastLine: false,
+                padding: { top: 16, bottom: 16 }
+            });
 
-        // Tab key support
-        editor.addEventListener("keydown", (e) => {
-            if (e.key === "Tab") {
-                e.preventDefault();
-                const s = editor.selectionStart, end = editor.selectionEnd;
-                editor.value = editor.value.substring(0, s) + "  " + editor.value.substring(end);
-                editor.selectionStart = editor.selectionEnd = s + 2;
-            }
-        });
+            // Sync theme when data-theme attribute changes
+            const observer = new MutationObserver(() => {
+                const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+                monaco.editor.setTheme(isDark ? 'vs-dark' : 'vs');
+            });
+            observer.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
 
-        // Ctrl+S / Cmd+S
-        document.addEventListener("keydown", (e) => {
-            if ((e.ctrlKey || e.metaKey) && e.key === "s") {
-                e.preventDefault();
-                saveBtn.click();
-            }
+            // Load content
+            fetch(`/api/flow/${FLOW_PATH}/raw`).then(r => r.json()).then(data => {
+                monacoEditor.setValue(data.content);
+            });
+
+            // Ctrl+S / Cmd+S
+            window.addEventListener("keydown", (e) => {
+                if ((e.ctrlKey || e.metaKey) && e.key === "s") {
+                    e.preventDefault();
+                    saveBtn.click();
+                }
+            });
         });
 
         saveBtn.addEventListener("click", async () => {
+            if (!monacoEditor) return;
             status.textContent = "Saving...";
             status.className = "detail-save-status";
             try {
+                const content = monacoEditor.getValue();
                 const res = await fetch(`/api/flow/${FLOW_PATH}/save`, {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ content: editor.value }),
+                    body: JSON.stringify({ content }),
                 });
                 const data = await res.json();
                 if (data.success) {

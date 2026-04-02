@@ -113,6 +113,17 @@ def _read_raw_yaml(filepath: str) -> str:
         return f.read()
 
 
+def _format_yaml_for_readability(yaml_str: str) -> str:
+    """Post-process YAML to add blank lines before each step for better readability."""
+    # Add newline before '- name:' if it's not already preceded by a blank line
+    import re
+    # Match '- name:' that starts a line (possibly with indentation)
+    formatted = re.sub(r'(\n\s*-\s+name:)', r'\n\1', yaml_str)
+    # Avoid triple newlines if double already existed
+    formatted = formatted.replace('\n\n\n', '\n\n')
+    return formatted.strip() + '\n'
+
+
 # ── Active run tracking ──────────────────────────────────────────────
 _active_runs: dict[str, dict] = {}
 _active_runners: dict[str, ChainRunner] = {}
@@ -353,7 +364,7 @@ def api_flow_save(flow_path):
 
     try:
         with open(abs_path, "w", encoding="utf-8") as f:
-            f.write(content)
+            f.write(_format_yaml_for_readability(content))
         return jsonify({"success": True})
     except OSError as exc:
         return jsonify({"error": f"Failed to save: {exc}"}), 500
@@ -388,8 +399,10 @@ def api_step_update(flow_path, step_index):
                     step[key] = value
 
         # Write back preserving original formatting as much as possible
+        dumped = yaml.dump(raw, default_flow_style=False, allow_unicode=True, sort_keys=False)
+        formatted = _format_yaml_for_readability(dumped)
         with open(abs_path, "w", encoding="utf-8") as f:
-            yaml.dump(raw, f, default_flow_style=False, allow_unicode=True, sort_keys=False)
+            f.write(formatted)
 
         return jsonify({"success": True})
     except Exception as exc:
