@@ -1,6 +1,8 @@
 # API Chain Runner
 
-A Python CLI tool for executing chained API calls defined in YAML. Each step can reference responses from previous steps, generate unique test data, upload files, poll for expected values, and add delays between steps — all logged to CSV or Excel.
+A powerful Python CLI tool for executing chained API calls defined in YAML. Each step can reference responses from previous steps, generate unique test data, upload files, poll for expected values, retry on failures, and add delays between steps — all logged to CSV or Excel.
+
+Perfect for API testing, integration testing, workflow automation, and complex multi-step API scenarios.
 
 ## Installation
 
@@ -30,7 +32,14 @@ chain:
       Authorization: "Bearer ${auth.token}"
 ```
 
-2. Run it:
+2. Create a `.env` file:
+
+```
+AUTH_EMAIL="user@example.com"
+AUTH_PASSWORD="secret"
+```
+
+3. Run it:
 
 ```bash
 api-chain-runner my_chain.yaml
@@ -147,19 +156,62 @@ chain:
       Authorization: "Bearer ${vars.token}"
 ```
 
+### Retry Configuration
+
+Automatically retry steps that fail due to transient errors:
+
+```yaml
+- name: fetch-data
+  url: "https://api.example.com/data"
+  method: GET
+  retry:
+    max_attempts: 3      # total attempts (default: 3)
+    delay: 2             # seconds between retries (default: 5)
+    retry_on:            # error types to retry on
+      - timeout
+      - connection
+      - 5xx
+```
+
+Retry types:
+- `timeout` — request timed out
+- `connection` — connection refused / DNS failure
+- `5xx` — server returned 500-599
+- `4xx` — server returned 400-499 (use with caution)
+
+To disable retries: `retry: false`
+
+Default behavior: 3 attempts on timeout/connection/5xx errors.
+
+Console output during retry:
+
+```
+[5/21] ▶ application-creation running....
+         🔄 [retry] Attempt 1/3 failed — HTTP 504
+         🔄 [retry] Waiting 5s before next attempt...
+         🔄 [retry] Attempt 2/3 failed — HTTP 504
+         🔄 [retry] Waiting 5s before next attempt...
+         🔄 [retry] Succeeded on attempt 3/3
+         ✅ Passed — HTTP 200 (1205ms)
+```
+
+Each retry attempt is logged to the console so you can watch the progression. Only the final result (success or exhausted retries) is logged to CSV.
+
 ### Unique Data Generation
 
-Auto-generate unique emails, PAN numbers, and mobile numbers per run:
+Auto-generate unique emails, PAN numbers, mobile numbers, and UDYAM IDs per run:
 
 ```yaml
 payload:
   email: "placeholder"
   pan: "placeholder"
   mobile: "placeholder"
+  udyam: "placeholder"
 unique_fields:
   email: email
   pan: pan
   mobile: mobile
+  udyam: udyam
 ```
 
 You can control the PAN entity type (the 4th character) using a suffix:
@@ -218,6 +270,16 @@ polling:
   max_timeout: 120
 ```
 
+Supports negative array indices:
+
+```yaml
+polling:
+  key_path: "applications.-1.status"   # -1 = last element
+  expected_values: ["APPROVED"]
+  interval: 5
+  max_timeout: 60
+```
+
 ### Delays
 
 Add wait time between steps:
@@ -243,10 +305,26 @@ files:
 Skip steps based on previous responses:
 
 ```yaml
-condition:
-  step: check-status
-  key_path: "status"
-  expected_value: "PENDING"
+# Single condition
+- name: generate-link
+  url: "https://api.example.com/link"
+  method: POST
+  condition:
+    step: check-status
+    key_path: "status"
+    expected_value: "PENDING"
+
+# Multiple conditions (ALL must pass)
+- name: ready-to-sanction
+  url: "https://api.example.com/sanction"
+  method: POST
+  condition:
+    - step: check-status
+      key_path: "kyb.udyam"
+      expected_value: "SUCCESS"
+    - step: check-status
+      key_path: "kyb.pan"
+      expected_value: "SUCCESS"
 ```
 
 ### Response Evaluation
@@ -275,6 +353,8 @@ Pause the chain for manual actions (e.g. filling a form in a browser):
 - name: complete-registration
   manual: true
   instruction: "Open the link above, fill the form, then press Enter here"
+  print_ref:
+    - "generate-link.link"
 ```
 
 ### Pause / Resume
@@ -311,26 +391,28 @@ No extra setup needed — the UI is included in the package.
 
 ## Step Fields Reference
 
-| Field | Required | Description |
-|-------|----------|-------------|
-| `name` | Yes | Unique step identifier |
-| `url` | Yes | Request URL (supports `${step.key}` references) |
-| `method` | Yes | HTTP method (`GET`, `POST`, `PUT`, `DELETE`, `PATCH`, `HEAD`, `OPTIONS`) |
-| `headers` | No | Request headers |
-| `payload` | No | JSON request body |
-| `files` | No | File uploads (`field: path`) |
-| `unique_fields` | No | Auto-generate unique values (`path: type`) |
-| `polling` | No | Retry until response matches expected value |
-| `delay` | No | Seconds to wait before this step |
-| `print_keys` | No | Response keys to print to console |
-| `manual` | No | Manual checkpoint step |
-| `instruction` | No | Instructions for manual steps |
-| `condition` | No | Conditional execution |
-| `continue_on_error` | No | Stop chain on failure if `false` |
-| `eval_keys` | No | Extract response values into named variables |
-| `eval_condition` | No | Python expression to evaluate using `eval_keys` |
-| `success_message` | No | Message printed when `eval_condition` is true |
-| `failure_message` | No | Message printed when `eval_condition` is false |
+| Field | Required | Type | Description |
+|-------|----------|------|-------------|
+| `name` | Yes | string | Unique step identifier |
+| `url` | No* | string | Request URL (supports `${step.key}` references) — *required unless `manual: true` |
+| `method` | No* | string | HTTP method (`GET`, `POST`, `PUT`, `DELETE`, `PATCH`, `HEAD`, `OPTIONS`) — *required unless `manual: true` |
+| `headers` | No | dict | Request headers |
+| `payload` | No | dict | JSON request body |
+| `files` | No | dict | File uploads (`field: path`) |
+| `unique_fields` | No | dict | Auto-generate unique values (`path: type`) |
+| `polling` | No | object | Retry until response matches expected value |
+| `delay` | No | int | Seconds to wait before this step |
+| `print_keys` | No | list | Response keys to print to console |
+| `manual` | No | bool | Manual checkpoint step |
+| `instruction` | No* | string | Instructions for manual steps — *required if `manual: true` |
+| `print_ref` | No | list | References to print from previous steps |
+| `condition` | No | object/list | Conditional execution (single or multiple) |
+| `continue_on_error` | No | bool | Stop chain on failure if `false` |
+| `retry` | No | object/bool | Retry configuration for transient failures |
+| `eval_keys` | No | dict | Extract response values into named variables |
+| `eval_condition` | No | string | Python expression to evaluate using `eval_keys` |
+| `success_message` | No | string | Message printed when `eval_condition` is true |
+| `failure_message` | No | string | Message printed when `eval_condition` is false |
 
 ## Output
 

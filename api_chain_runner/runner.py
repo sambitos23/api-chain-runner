@@ -163,6 +163,9 @@ class ChainRunner:
                     f"Step at index {idx} is missing required field 'name'."
                 )
 
+            # Parse retry config
+            retry = self._parse_retry(entry)
+
             # Parse condition config if present (single dict or list of dicts)
             condition = None
             if "condition" in entry:
@@ -206,6 +209,7 @@ class ChainRunner:
                     condition=condition,
                     delay=int(entry.get("delay", 0)),
                     continue_on_error=entry.get("continue_on_error", True),
+                    retry=retry,
                     eval_keys=entry.get("eval_keys"),
                     eval_condition=entry.get("eval_condition"),
                     success_message=entry.get("success_message"),
@@ -268,6 +272,7 @@ class ChainRunner:
                 print_keys=entry.get("print_keys"),
                 condition=condition,
                 continue_on_error=entry.get("continue_on_error", True),
+                retry=retry,
                 eval_keys=entry.get("eval_keys"),
                 eval_condition=entry.get("eval_condition"),
                 success_message=entry.get("success_message"),
@@ -279,6 +284,23 @@ class ChainRunner:
         validate_steps(steps)
 
         return steps
+
+    @staticmethod
+    def _parse_retry(entry: dict):
+        """Parse retry config from a step entry."""
+        from api_chain_runner.models import RetryConfig
+        r = entry.get("retry")
+        if r is None:
+            return None  # use default (auto-retry on timeout/connection)
+        if r is False:
+            return False  # explicitly disabled
+        if isinstance(r, dict):
+            return RetryConfig(
+                max_attempts=int(r.get("max_attempts", 3)),
+                delay=int(r.get("delay", 5)),
+                retry_on=r.get("on", r.get("retry_on", ["timeout", "connection"])),
+            )
+        return None
 
     def _load_variables(self, config_path: str) -> None:
         """Load top-level 'variables' from YAML and pre-seed the store as 'vars'.

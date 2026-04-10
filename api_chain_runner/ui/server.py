@@ -89,6 +89,7 @@ def _parse_chain(filepath: str) -> dict:
             "eval_condition": step.get("eval_condition", ""),
             "success_message": step.get("success_message", ""),
             "failure_message": step.get("failure_message", ""),
+            "retry": step.get("retry"),
         }
         if "polling" in step:
             p = step["polling"]
@@ -383,7 +384,7 @@ def api_step_update(flow_path, step_index):
 
         step = chain[step_index]
         # Apply updates to allowed fields
-        allowed = {"payload", "headers", "url", "unique_fields", "delay", "continue_on_error", "method", "files", "print_keys", "polling", "eval_keys", "eval_condition", "success_message", "failure_message", "manual", "instruction", "print_ref"}
+        allowed = {"payload", "headers", "url", "unique_fields", "delay", "continue_on_error", "method", "files", "print_keys", "polling", "eval_keys", "eval_condition", "success_message", "failure_message", "manual", "instruction", "print_ref", "retry"}
         for key, value in updates.items():
             if key in allowed:
                 if value is None or value == "":
