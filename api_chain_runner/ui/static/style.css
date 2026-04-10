@@ -292,6 +292,10 @@ body > svg[style*="display:none"] { position: absolute; width: 0; height: 0; ove
 .list-remove { font-size: 1rem; color: var(--text-muted); padding: 0.1rem 0.3rem; }
 .list-remove:hover { color: var(--red); }
 .toggle-section { background: var(--bg-input); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 0.6rem 0.75rem; }
+.retry-param { display: flex; flex-direction: column; gap: 0.35rem; }
+.retry-checks { display: flex; gap: 0.6rem; flex-wrap: wrap; margin-top: 0.15rem; }
+.retry-check { display: flex; align-items: center; gap: 0.25rem; font-size: 0.75rem; color: var(--text-secondary); cursor: pointer; }
+.retry-check input { accent-color: var(--accent); }
 .detail-footer { padding: 0.75rem 1.25rem; border-top: 1px solid var(--border); display: flex; align-items: center; gap: 0.5rem; flex-shrink: 0; }
 .detail-save-status { font-size: 0.78rem; margin-left: 0.5rem; }
 .detail-save-status.success { color: var(--green); }

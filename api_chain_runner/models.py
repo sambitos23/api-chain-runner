@@ -39,6 +39,26 @@ class ConditionConfig:
     expected_value: str  # value that must match for this step to run
 
 
+# Default retry: 3 attempts on timeout/connection/5xx errors
+DEFAULT_RETRY_ON = ["timeout", "connection", "5xx"]
+
+
+@dataclass
+class RetryConfig:
+    """Retry configuration for a step that may fail transiently.
+
+    ``retry_on`` controls which error types trigger a retry:
+    - ``"timeout"`` — request timed out
+    - ``"connection"`` — connection refused / DNS failure
+    - ``"5xx"`` — server returned 500-599
+    - ``"4xx"`` — server returned 400-499 (use with caution)
+    """
+
+    max_attempts: int = 3
+    delay: int = 5  # seconds between retries
+    retry_on: list[str] = field(default_factory=lambda: list(DEFAULT_RETRY_ON))
+
+
 @dataclass
 class StepDefinition:
     """A single step in an API chain."""
@@ -59,6 +79,7 @@ class StepDefinition:
     print_ref: list[str] | None = None  # references to print from previous steps (e.g. "step.key")
     condition: list[ConditionConfig] | None = None  # conditional execution (all must pass)
     continue_on_error: bool = True
+    retry: RetryConfig | None | bool = None  # None=use default, False=disable, RetryConfig=custom
     eval_keys: dict[str, str] | None = None  # key alias -> dot-notation path for evaluation
     eval_condition: str | None = None  # Python expression to evaluate using eval_keys values
     success_message: str | None = None  # message to print on success condition

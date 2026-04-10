@@ -117,6 +117,11 @@
             const p = (step.has_polling && step.polling) ? step.polling : null;
             html += buildToggleSection("polling", "Polling", p, buildPollingFields);
 
+            // Retry — structured
+            const retryData = step.retry;
+            const hasRetry = retryData && retryData !== false && typeof retryData === "object";
+            html += buildToggleSection("retry", "Retry", hasRetry ? retryData : null, buildRetryFields);
+
             // Eval Keys — structured
             const hasEval = step.eval_keys && Object.keys(step.eval_keys).length;
             html += buildToggleSection("eval", "Eval Keys", hasEval ? step : null, buildEvalFields);
@@ -194,9 +199,11 @@
                 if (hasParam) {
                     section.innerHTML = `<div class="polling-empty">Not configured</div><button class="btn btn-ghost btn-sm toggle-btn" data-target="${id}" style="margin-top:0.4rem">+ Add</button>`;
                 } else {
-                    const buildFn = id === "polling" ? buildPollingFields : buildEvalFields;
+                    const buildFn = id === "polling" ? buildPollingFields : id === "retry" ? buildRetryFields : buildEvalFields;
                     const defaults = id === "polling"
                         ? {key_path:"",expected_values:[],interval:10,max_timeout:120}
+                        : id === "retry"
+                        ? {max_attempts:3,delay:5,retry_on:["timeout","connection","5xx"]}
                         : {eval_keys:{},eval_condition:"",success_message:"",failure_message:""};
                     section.innerHTML = buildFn(defaults) + `<button class="btn btn-ghost btn-sm toggle-btn" data-target="${id}" style="margin-top:0.4rem">Remove</button>`;
                 }
@@ -229,6 +236,19 @@
             <input class="detail-editable-input eval-input" data-eval="success_message" value="${esc(s.success_message || "")}" placeholder="Scores above threshold">
             <label class="poll-label">Failure Message</label>
             <input class="detail-editable-input eval-input" data-eval="failure_message" value="${esc(s.failure_message || "")}" placeholder="Scores below threshold">
+        </div>`;
+    }
+
+    function buildRetryFields(r) {
+        const retryOn = (r && r.retry_on) || (r && r.on) || ["timeout", "connection", "5xx"];
+        const opts = ["timeout", "connection", "5xx", "4xx"];
+        return `<div class="retry-param">
+            <label class="poll-label">Max Attempts</label>
+            <input type="number" class="detail-editable-input poll-input" data-retry="max_attempts" value="${(r && r.max_attempts) || 3}" min="1" max="20">
+            <label class="poll-label">Delay Between Retries (seconds)</label>
+            <input type="number" class="detail-editable-input poll-input" data-retry="delay" value="${(r && r.delay) || 5}" min="0">
+            <label class="poll-label">Retry On</label>
+            <div class="retry-checks">${opts.map(o => `<label class="retry-check"><input type="checkbox" data-retry-on="${o}" ${retryOn.includes(o) ? "checked" : ""}> ${o}</label>`).join("")}</div>
         </div>`;
     }
 
@@ -323,6 +343,20 @@
             updates.eval_condition = null;
             updates.success_message = null;
             updates.failure_message = null;
+        }
+
+        // Collect retry fields
+        const retryParam = detailBody.querySelector(".retry-param");
+        if (retryParam) {
+            const maxAttempts = parseInt(retryParam.querySelector('[data-retry="max_attempts"]').value) || 3;
+            const retryDelay = parseInt(retryParam.querySelector('[data-retry="delay"]').value) || 5;
+            const retryOn = [];
+            retryParam.querySelectorAll('[data-retry-on]').forEach(cb => {
+                if (cb.checked) retryOn.push(cb.dataset.retryOn);
+            });
+            updates.retry = { max_attempts: maxAttempts, delay: retryDelay, on: retryOn };
+        } else if (detailBody.querySelector("#retry-section .polling-empty")) {
+            updates.retry = false;
         }
 
         detailSaveStatus.textContent = "Saving...";

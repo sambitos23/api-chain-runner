@@ -1,6 +1,8 @@
 # API Chain Runner
 
-A Python CLI tool for executing chained API calls defined in YAML. Each step can reference responses from previous steps, generate unique test data, upload files, poll for expected values, and add delays between steps — all logged to CSV or Excel with IST timestamps.
+A powerful Python CLI tool for executing chained API calls defined in YAML. Each step can reference responses from previous steps, generate unique test data, upload files, poll for expected values, retry on failures, and add delays between steps — all logged to CSV or Excel with IST timestamps.
+
+Perfect for API testing, integration testing, workflow automation, and complex multi-step API scenarios.
 
 ## Quick Start
 
@@ -16,7 +18,7 @@ pip install -r requirements.txt
 python -m api_chain_runner example_chain.yaml
 ```
 
-## Usage
+## CLI Usage
 
 ```bash
 # Default output: <config_name>_results.csv
@@ -30,6 +32,12 @@ python -m api_chain_runner my_chain.yaml -o results.xlsx -f xlsx
 
 # Launch web UI
 python -m api_chain_runner --ui flow/
+
+# Custom env file
+python -m api_chain_runner my_chain.yaml -e production.env
+
+# Check version
+python -m api_chain_runner --version
 ```
 
 ## YAML Chain Format
@@ -39,49 +47,100 @@ A chain config has an optional `variables` block and a required `chain` list of 
 ```yaml
 variables:
   my_token: "some-static-token"
+  base_url: "https://api.example.com"
 
 chain:
   - name: auth
-    url: "https://api.example.com/login"
+    url: "${vars.base_url}/login"
     method: POST
     headers:
       Content-Type: "application/json"
     payload:
-      email: "user@example.com"
-      password: "secret"
+      email: "${ENV:AUTH_EMAIL}"
+      password: "${ENV:AUTH_PASSWORD}"
 
   - name: get_user
-    url: "https://api.example.com/user"
+    url: "${vars.base_url}/user"
     method: GET
     delay: 5
     headers:
       Authorization: "Bearer ${auth.token}"
+    retry:
+      max_attempts: 3
+      delay: 2
+      retry_on: ["timeout", "connection", "5xx"]
 ```
 
-### Step Fields
+## Complete Step Fields Reference
 
-| Field | Required | Description |
-|-------|----------|-------------|
-| `name` | Yes | Unique step identifier, used for referencing responses |
-| `url` | Yes | Request URL (supports `${step.key}` references) |
-| `method` | Yes | HTTP method (`GET`, `POST`, `PUT`, `DELETE`, `PATCH`, `HEAD`, `OPTIONS`) |
-| `headers` | No | Request headers as key-value pairs |
-| `payload` | No | JSON request body |
-| `files` | No | File uploads as `field_name: file_path` pairs (multipart/form-data) |
-| `unique_fields` | No | Auto-generate unique values — `dotted.path: type` where type is `email`, `pan`, or `mobile` |
-| `extract` | No | Extract values from response |
-| `polling` | No | Retry until a response field matches an expected value |
-| `delay` | No | Seconds to wait before executing this step (default: `0`) |
-| `print_keys` | No | List of response key paths to print to console after execution |
-| `manual` | No | If `true`, this is a manual step — no HTTP call, just shows instructions |
-| `instruction` | No* | Text shown to the user during a manual step (*required if `manual: true`) |
-| `print_ref` | No | List of `step.key` references to print from previous steps (for manual steps) |
-| `condition` | No | Only execute this step if a previous step's response matches a value |
-| `continue_on_error` | No | If `false`, chain stops on failure (default: `true`) |
-| `eval_keys` | No | Extract response values into named variables for evaluation |
-| `eval_condition` | No | Python expression to evaluate using `eval_keys` variables |
-| `success_message` | No | Message printed when `eval_condition` is true |
-| `failure_message` | No | Message printed when `eval_condition` is false |
+| Field | Required | Type | Description |
+|-------|----------|------|-------------|
+| `name` | Yes | string | Unique step identifier, used for referencing responses |
+| `url` | No* | string | Request URL (supports `${step.key}` references) — *required unless `manual: true` |
+| `method` | No* | string | HTTP method (`GET`, `POST`, `PUT`, `DELETE`, `PATCH`, `HEAD`, `OPTIONS`) — *required unless `manual: true` |
+| `headers` | No | dict | Request headers as key-value pairs |
+| `payload` | No | dict | JSON request body |
+| `files` | No | dict | File uploads as `field_name: file_path` pairs (multipart/form-data) |
+| `unique_fields` | No | dict | Auto-generate unique values — `dotted.path: type` where type is `email`, `pan`, `mobile`, or `udyam` |
+| `extract` | No | dict | Extract values from response (legacy, use `eval_keys` instead) |
+| `polling` | No | object | Retry until a response field matches an expected value |
+| `delay` | No | int | Seconds to wait before executing this step (default: `0`) |
+| `print_keys` | No | list | Response key paths to print to console after execution |
+| `manual` | No | bool | If `true`, this is a manual step — no HTTP call, just shows instructions |
+| `instruction` | No* | string | Text shown to the user during a manual step (*required if `manual: true`) |
+| `print_ref` | No | list | List of `step.key` references to print from previous steps (for manual steps) |
+| `condition` | No | object/list | Only execute this step if previous step(s) match condition(s) |
+| `continue_on_error` | No | bool | If `false`, chain stops on failure (default: `true`) |
+| `retry` | No | object/bool | Retry configuration for transient failures (default: 3 attempts on timeout/connection/5xx) |
+| `eval_keys` | No | dict | Extract response values into named variables for evaluation |
+| `eval_condition` | No | string | Python expression to evaluate using `eval_keys` variables |
+| `success_message` | No | string | Message printed when `eval_condition` is true |
+| `failure_message` | No | string | Message printed when `eval_condition` is false |
+
+### Retry Configuration
+
+Automatically retry steps that fail due to transient errors (timeouts, connection issues, 5xx errors):
+
+```yaml
+- name: fetch-data
+  url: "https://api.example.com/data"
+  method: GET
+  retry:
+    max_attempts: 3      # total attempts (default: 3)
+    delay: 2             # seconds between retries (default: 5)
+    retry_on:            # error types to retry on (default: ["timeout", "connection", "5xx"])
+      - timeout
+      - connection
+      - 5xx
+```
+
+Retry types:
+- `timeout` — request timed out
+- `connection` — connection refused / DNS failure
+- `5xx` — server returned 500-599
+- `4xx` — server returned 400-499 (use with caution)
+
+To disable retries for a step:
+
+```yaml
+retry: false
+```
+
+Default behavior (if `retry` is omitted): 3 attempts on timeout/connection/5xx errors.
+
+Console output during retry:
+
+```
+[5/21] ▶ application-creation running....
+         🔄 [retry] Attempt 1/3 failed — HTTP 504
+         🔄 [retry] Waiting 5s before next attempt...
+         🔄 [retry] Attempt 2/3 failed — HTTP 504
+         🔄 [retry] Waiting 5s before next attempt...
+         🔄 [retry] Succeeded on attempt 3/3
+         ✅ Passed — HTTP 200 (1205ms)
+```
+
+Each retry attempt is logged to the console so you can watch the progression. Only the final result (success or exhausted retries) is logged to CSV.
 
 ### Delay Between Steps
 

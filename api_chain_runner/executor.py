@@ -61,7 +61,7 @@ class StepExecutor:
         are printed to console but not written to the log file.
         """
         if not step.polling:
-            return self._execute_once(step)
+            return self._execute_with_retry(step)
 
         polling = step.polling
         start_time = time.monotonic()
@@ -222,6 +222,77 @@ class StepExecutor:
                 print(f"  [eval] ERROR evaluating condition: {e}")
 
         return eval_values
+
+    def _get_retry_config(self, step: StepDefinition):
+        """Resolve the effective retry config for a step."""
+        from api_chain_runner.models import RetryConfig, DEFAULT_RETRY_ON
+        if step.retry is False:
+            return None  # explicitly disabled
+        if isinstance(step.retry, RetryConfig):
+            return step.retry
+        # Default: retry on timeout/connection, 3 attempts
+        return RetryConfig()
+
+    def _should_retry(self, result: StepResult, retry_on: list[str]) -> bool:
+        """Check if a result matches any of the retry_on conditions."""
+        error = (result.error or "").lower()
+        # Also check response body for timeout messages (e.g. API Gateway 504)
+        body_str = ""
+        if isinstance(result.response_body, dict):
+            body_str = str(result.response_body).lower()
+        elif isinstance(result.response_body, str):
+            body_str = result.response_body.lower()
+
+        for condition in retry_on:
+            c = condition.lower()
+            if c == "timeout" and (
+                "timeout" in error or "timed out" in error
+                or "timeout" in body_str
+                or result.status_code == 504
+            ):
+                return True
+            if c == "connection" and ("connection" in error or "resolve" in error or "refused" in error):
+                return True
+            if c == "5xx" and 500 <= result.status_code < 600:
+                return True
+            if c == "4xx" and 400 <= result.status_code < 500:
+                return True
+        return False
+
+    def _execute_with_retry(self, step: StepDefinition) -> StepResult:
+        """Execute a step with automatic retry on transient failures."""
+        retry_cfg = self._get_retry_config(step)
+        if not retry_cfg or retry_cfg.max_attempts <= 1:
+            return self._execute_once(step)
+
+        last_result = None
+        for attempt in range(1, retry_cfg.max_attempts + 1):
+            is_last = attempt == retry_cfg.max_attempts
+            result = self._execute_once(step, log_to_csv=is_last)
+            last_result = result
+
+            if result.success or not self._should_retry(result, retry_cfg.retry_on):
+                if attempt > 1:
+                    if result.success:
+                        print(f"         🔄 [retry] Succeeded on attempt {attempt}/{retry_cfg.max_attempts}")
+                    else:
+                        print(f"         🔄 [retry] Non-retryable error on attempt {attempt} — stopping")
+                if not is_last:
+                    self._log_result(step, result)
+                return result
+
+            reason = result.error or f"HTTP {result.status_code}"
+            print(
+                f"         🔄 [retry] Attempt {attempt}/{retry_cfg.max_attempts} failed"
+                f" — {reason}"
+            )
+
+            if not is_last:
+                print(f"         🔄 [retry] Waiting {retry_cfg.delay}s before next attempt...")
+                self._interruptible_sleep(retry_cfg.delay)
+
+        print(f"         🔄 [retry] All {retry_cfg.max_attempts} attempts exhausted")
+        return last_result
 
     def _execute_once(self, step: StepDefinition, log_to_csv: bool = True) -> StepResult:
         """Execute a single API step.
