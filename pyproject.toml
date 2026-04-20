@@ -27,7 +27,7 @@ dependencies = [
     "requests",
     "pyyaml",
     "openpyxl",
-    "flask",
+    "flask"
 ]
 
 [project.urls]

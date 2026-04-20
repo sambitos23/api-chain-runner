@@ -226,16 +226,34 @@ body > svg[style*="display:none"] { position: absolute; width: 0; height: 0; ove
 .step-box.state-passed { border-color: var(--green); }
 .step-box.state-failed { border-color: var(--red); }
 .step-box.state-skipped { opacity: 0.45; }
+.step-box.state-manual { border-color: var(--purple); box-shadow: 0 0 16px rgba(168,85,247,0.2); animation: pulse-manual 2s ease-in-out infinite; }
+@keyframes pulse-manual { 0%,100% { box-shadow: 0 0 16px rgba(168,85,247,0.2); } 50% { box-shadow: 0 0 28px rgba(168,85,247,0.4); } }
 .step-result-indicator { position: absolute; top: -10px; right: -10px; width: 24px; height: 24px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 0.7rem; font-weight: 800; border: 2px solid var(--bg); }
 .step-result-indicator.passed { background: var(--green); color: #000; }
 .step-result-indicator.failed { background: var(--red); color: #fff; }
 .step-result-indicator.skipped { background: var(--text-muted); color: #fff; }
+.step-result-indicator.manual { background: var(--purple); color: #fff; }
 .step-status-code { display: inline-block; margin-top: 0.35rem; font-size: 0.7rem; font-weight: 700; font-family: 'SF Mono','Fira Code',monospace; padding: 0.1rem 0.4rem; border-radius: 4px; }
 .status-2xx { background: var(--green-bg); color: var(--green); }
 .status-3xx { background: var(--accent-bg); color: var(--cyan); }
 .status-4xx { background: var(--orange-bg); color: var(--orange); }
 .status-5xx { background: var(--red-bg); color: var(--red); }
 .status-err { background: var(--red-bg); color: var(--red); }
+
+/* ── Manual Step Overlay ──────────────────────────────────── */
+.manual-overlay { position: fixed; inset: 0; z-index: 1000; background: rgba(0,0,0,0.55); backdrop-filter: blur(4px); display: flex; align-items: center; justify-content: center; }
+.manual-card { background: var(--bg-card); border: 1.5px solid var(--purple); border-radius: var(--radius-lg, 12px); padding: 2rem 2.2rem; max-width: 520px; width: 90%; box-shadow: 0 8px 40px rgba(168,85,247,0.15); }
+.manual-header { display: flex; align-items: center; gap: 0.6rem; margin-bottom: 1.2rem; }
+.manual-icon { font-size: 1.5rem; }
+.manual-title { font-size: 1.05rem; font-weight: 700; color: var(--text); }
+.manual-instruction { background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 1rem 1.2rem; margin-bottom: 1.2rem; }
+.manual-instruction p { margin: 0.3rem 0; font-size: 0.85rem; color: var(--text-secondary); line-height: 1.5; }
+.manual-refs { margin-bottom: 1.2rem; }
+.manual-ref-row { display: flex; align-items: center; gap: 0.5rem; padding: 0.4rem 0; border-bottom: 1px solid var(--border); }
+.manual-ref-key { font-size: 0.75rem; font-weight: 600; color: var(--text-muted); font-family: 'SF Mono','Fira Code',monospace; min-width: 0; flex-shrink: 0; }
+.manual-ref-val { font-size: 0.8rem; color: var(--accent); font-family: 'SF Mono','Fira Code',monospace; cursor: pointer; word-break: break-all; }
+.manual-ref-val:hover { text-decoration: underline; }
+.manual-done-btn { width: 100%; justify-content: center; padding: 0.7rem 1.2rem; font-size: 0.9rem; font-weight: 700; display: flex; align-items: center; }
 
 /* ── Response Panel ───────────────────────────────────────── */
 .response-panel { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); margin-top: 1rem; overflow: hidden; }

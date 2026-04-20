@@ -452,11 +452,21 @@
 
                 if (data.status === "running") {
                     const done = data.results.length;
-                    if (data.paused) {
+
+                    if (data.waiting_manual) {
+                        // Show manual step overlay
+                        runStatus.textContent = `Manual Step — waiting`;
+                        runStatus.className = "run-status-badge running";
+                        pauseBtn.classList.add("hidden");
+                        resumeBtn.classList.add("hidden");
+                        showManualOverlay(runId, data);
+                    } else if (data.paused) {
+                        hideManualOverlay();
                         runStatus.textContent = `Paused (${done}/${steps.length})`;
                         pauseBtn.classList.add("hidden");
                         resumeBtn.classList.remove("hidden");
                     } else {
+                        hideManualOverlay();
                         runStatus.textContent = `Running ${done}/${steps.length}`;
                         pauseBtn.classList.remove("hidden");
                         resumeBtn.classList.add("hidden");
@@ -467,6 +477,7 @@
                     currentRunId = null;
                     pauseBtn.classList.add("hidden");
                     resumeBtn.classList.add("hidden");
+                    hideManualOverlay();
                     const passed = data.results.filter(r => r.success).length;
                     const failed = data.results.filter(r => !r.success).length;
                     if (data.status === "completed") {
@@ -483,10 +494,86 @@
                 currentRunId = null;
                 pauseBtn.classList.add("hidden");
                 resumeBtn.classList.add("hidden");
+                hideManualOverlay();
                 runStatus.textContent = "Poll error";
                 runStatus.className = "run-status-badge error";
             }
         }, 1000);
+    }
+
+    // ── Manual step overlay ──────────────────────────────────
+    let manualOverlayEl = null;
+
+    function showManualOverlay(runId, data) {
+        if (manualOverlayEl) return; // already showing
+
+        manualOverlayEl = document.createElement("div");
+        manualOverlayEl.className = "manual-overlay";
+
+        const card = document.createElement("div");
+        card.className = "manual-card";
+
+        const header = document.createElement("div");
+        header.className = "manual-header";
+        header.innerHTML = `<span class="manual-icon">✋</span><span class="manual-title">Manual Step — ${esc(data.manual_step_name)}</span>`;
+        card.appendChild(header);
+
+        if (data.manual_instruction) {
+            const instrBlock = document.createElement("div");
+            instrBlock.className = "manual-instruction";
+            const lines = data.manual_instruction.split("\n").filter(l => l.trim());
+            lines.forEach(line => {
+                const p = document.createElement("p");
+                p.textContent = line;
+                instrBlock.appendChild(p);
+            });
+            card.appendChild(instrBlock);
+        }
+
+        if (data.manual_print_ref && Object.keys(data.manual_print_ref).length) {
+            const refBlock = document.createElement("div");
+            refBlock.className = "manual-refs";
+            for (const [k, v] of Object.entries(data.manual_print_ref)) {
+                const row = document.createElement("div");
+                row.className = "manual-ref-row";
+                row.innerHTML = `<span class="manual-ref-key">${esc(k)}</span>`;
+                const valSpan = document.createElement("span");
+                valSpan.className = "manual-ref-val";
+                valSpan.textContent = v;
+                valSpan.title = "Click to copy";
+                valSpan.addEventListener("click", () => {
+                    navigator.clipboard.writeText(v).then(() => {
+                        valSpan.classList.add("pk-copied");
+                        setTimeout(() => valSpan.classList.remove("pk-copied"), 1200);
+                    });
+                });
+                row.appendChild(valSpan);
+                refBlock.appendChild(row);
+            }
+            card.appendChild(refBlock);
+        }
+
+        const btn = document.createElement("button");
+        btn.className = "btn btn-primary manual-done-btn";
+        btn.innerHTML = `<svg class="icon icon-sm" style="margin-right:0.4rem"><use href="#i-play"/></svg> Mark as Done & Continue`;
+        btn.addEventListener("click", async () => {
+            btn.disabled = true;
+            btn.textContent = "Continuing...";
+            try {
+                await fetch(`/api/run/${runId}/manual-done`, { method: "POST" });
+            } catch (e) { /* poll will pick up the state change */ }
+        });
+        card.appendChild(btn);
+
+        manualOverlayEl.appendChild(card);
+        document.querySelector(".main-content").appendChild(manualOverlayEl);
+    }
+
+    function hideManualOverlay() {
+        if (manualOverlayEl) {
+            manualOverlayEl.remove();
+            manualOverlayEl = null;
+        }
     }
 
     function statusClass(code) {
@@ -586,7 +673,12 @@
                     }
                 }
             } else if (data.status === "running" && i === results.length) {
-                box.classList.add("state-running");
+                if (data.waiting_manual) {
+                    box.classList.add("state-manual");
+                    addIndicator(box, "✋", "manual");
+                } else {
+                    box.classList.add("state-running");
+                }
             }
         });
     }

@@ -13,7 +13,6 @@ import yaml
 from flask import Flask, jsonify, render_template, request
 
 from api_chain_runner.runner import ChainRunner
-from api_chain_runner.models import ConfigurationError
 
 app = Flask(
     __name__,
@@ -128,6 +127,7 @@ def _format_yaml_for_readability(yaml_str: str) -> str:
 # ── Active run tracking ──────────────────────────────────────────────
 _active_runs: dict[str, dict] = {}
 _active_runners: dict[str, ChainRunner] = {}
+_manual_events: dict[str, threading.Event] = {}
 _run_lock = threading.Lock()
 
 
@@ -137,10 +137,15 @@ def _run_chain_thread(run_id: str, filepath: str):
         _active_runs[run_id] = {
             "status": "running",
             "paused": False,
+            "waiting_manual": False,
+            "manual_instruction": "",
+            "manual_step_name": "",
+            "manual_print_ref": [],
             "current_step": 0,
             "results": [],
             "error": None,
         }
+        _manual_events[run_id] = threading.Event()
 
     try:
         runner = ChainRunner(filepath)
@@ -160,6 +165,43 @@ def _run_chain_thread(run_id: str, filepath: str):
 
             try:
                 if step.manual:
+                    # Resolve print_ref values from previous steps
+                    resolved_refs = {}
+                    if step.print_ref:
+                        from api_chain_runner.executor import StepExecutor
+                        for ref in step.print_ref:
+                            parts = ref.split(".", 1)
+                            if len(parts) == 2 and runner.store.has(parts[0]):
+                                try:
+                                    stored = runner.store.get_raw(parts[0])
+                                    val = StepExecutor._get_nested(stored, parts[1])
+                                    resolved_refs[ref] = str(val) if val is not None else "null"
+                                except Exception:
+                                    resolved_refs[ref] = "—"
+                            else:
+                                resolved_refs[ref] = "—"
+
+                    # Signal the UI that we're waiting for manual completion
+                    manual_evt = _manual_events.get(run_id)
+                    if manual_evt:
+                        manual_evt.clear()
+
+                    with _run_lock:
+                        _active_runs[run_id]["waiting_manual"] = True
+                        _active_runs[run_id]["manual_instruction"] = step.instruction or ""
+                        _active_runs[run_id]["manual_step_name"] = step.name
+                        _active_runs[run_id]["manual_print_ref"] = resolved_refs
+
+                    # Block until the user clicks "Mark as Done" in the UI
+                    if manual_evt:
+                        manual_evt.wait()
+
+                    with _run_lock:
+                        _active_runs[run_id]["waiting_manual"] = False
+                        _active_runs[run_id]["manual_instruction"] = ""
+                        _active_runs[run_id]["manual_step_name"] = ""
+                        _active_runs[run_id]["manual_print_ref"] = []
+
                     step_result = {
                         "step_name": step.name,
                         "status_code": 0,
@@ -168,6 +210,8 @@ def _run_chain_thread(run_id: str, filepath: str):
                         "error": None,
                         "manual": True,
                     }
+                    if resolved_refs:
+                        step_result["printed_keys"] = resolved_refs
                 else:
                     if step.condition:
                         skip = False
@@ -261,6 +305,7 @@ def _run_chain_thread(run_id: str, filepath: str):
                                     placeholder["printed_keys"] = {kp: "—" for kp in remaining_step.print_keys}
                                 _active_runs[run_id]["results"].append(placeholder)
                             _active_runners.pop(run_id, None)
+                            _manual_events.pop(run_id, None)
                         return
 
             except Exception as exc:
@@ -282,12 +327,14 @@ def _run_chain_thread(run_id: str, filepath: str):
         with _run_lock:
             _active_runs[run_id]["status"] = "completed"
             _active_runners.pop(run_id, None)
+            _manual_events.pop(run_id, None)
 
     except Exception as exc:
         with _run_lock:
             _active_runs[run_id]["status"] = "error"
             _active_runs[run_id]["error"] = str(exc)
             _active_runners.pop(run_id, None)
+            _manual_events.pop(run_id, None)
 
 
 # ── Routes ────────────────────────────────────────────────────────────
@@ -505,6 +552,20 @@ def api_run_resume(run_id):
         return jsonify({"error": "run not found or already finished"}), 404
     runner.pause_controller._paused.clear()
     return jsonify({"success": True, "paused": False})
+
+
+@app.route("/api/run/<run_id>/manual-done", methods=["POST"])
+def api_run_manual_done(run_id):
+    """Signal that the user has completed the manual step."""
+    with _run_lock:
+        evt = _manual_events.get(run_id)
+        run = _active_runs.get(run_id)
+    if not evt or not run:
+        return jsonify({"error": "run not found or already finished"}), 404
+    if not run.get("waiting_manual"):
+        return jsonify({"error": "not waiting for manual step"}), 400
+    evt.set()
+    return jsonify({"success": True})
 
 
 # ── Flow Documentation ────────────────────────────────────────────────

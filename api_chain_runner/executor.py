@@ -334,14 +334,18 @@ class StepExecutor:
             opened_files = []
             if step.files:
                 # Multipart file upload — open files and attach as multipart/form-data
-                files_dict = {}
+                # files values can be a string (single file) or a list (multiple files
+                # under the same field name, e.g. shop images).
+                files_list = []
                 for field_name, file_path in step.files.items():
-                    p = Path(file_path)
-                    mime_type = mimetypes.guess_type(p.name)[0] or "application/octet-stream"
-                    fh = open(p, "rb")
-                    opened_files.append(fh)
-                    files_dict[field_name] = (p.name, fh, mime_type)
-                request_kwargs["files"] = files_dict
+                    paths = file_path if isinstance(file_path, list) else [file_path]
+                    for fp in paths:
+                        p = Path(fp)
+                        mime_type = mimetypes.guess_type(p.name)[0] or "application/octet-stream"
+                        fh = open(p, "rb")
+                        opened_files.append(fh)
+                        files_list.append((field_name, (p.name, fh, mime_type)))
+                request_kwargs["files"] = files_list
                 # Send any extra payload fields as form data alongside the file
                 if resolved_payload:
                     request_kwargs["data"] = resolved_payload
