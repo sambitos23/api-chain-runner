@@ -11,11 +11,14 @@ import requests
 from api_chain_runner.generator import UniqueDataGenerator
 from api_chain_runner.logger import ResultLogger
 from api_chain_runner.models import LogEntry, StepDefinition, StepResult
+from api_chain_runner.net import prefer_ipv4
 from api_chain_runner.pause import PauseController
 from api_chain_runner.resolver import ReferenceResolver
 from api_chain_runner.store import ResponseStore
 
 IST = timezone(timedelta(hours=5, minutes=30))
+
+prefer_ipv4()  # avoid 30 s-per-address stalls on networks without working IPv6
 
 
 class StepExecutor:
@@ -332,12 +335,13 @@ class StepExecutor:
             }
 
             opened_files = []
-            if step.files:
+            form_mode = step.body_type == "form"
+            if step.files or form_mode:
                 # Multipart file upload — open files and attach as multipart/form-data
                 # files values can be a string (single file) or a list (multiple files
                 # under the same field name, e.g. shop images).
                 files_list = []
-                for field_name, file_path in step.files.items():
+                for field_name, file_path in (step.files or {}).items():
                     paths = file_path if isinstance(file_path, list) else [file_path]
                     for fp in paths:
                         p = Path(fp)
@@ -345,10 +349,21 @@ class StepExecutor:
                         fh = open(p, "rb")
                         opened_files.append(fh)
                         files_list.append((field_name, (p.name, fh, mime_type)))
-                request_kwargs["files"] = files_list
-                # Send any extra payload fields as form data alongside the file
-                if resolved_payload:
-                    request_kwargs["data"] = resolved_payload
+                if form_mode:
+                    # Text fields travel as multipart parts too, so text-only forms are multipart as well.
+                    for field_name, value in (resolved_payload or {}).items():
+                        text = value if isinstance(value, str) else (
+                            json.dumps(value) if isinstance(value, (dict, list)) else str(value)
+                        )
+                        files_list.append((field_name, (None, text)))
+                    request_kwargs["files"] = files_list
+                else:
+                    request_kwargs["files"] = files_list
+                    # Send any extra payload fields as form data alongside the file
+                    if resolved_payload:
+                        request_kwargs["data"] = resolved_payload
+            elif step.body_type == "urlencoded":
+                request_kwargs["data"] = resolved_payload
             else:
                 request_kwargs["json"] = resolved_payload
 
@@ -376,6 +391,7 @@ class StepExecutor:
                 duration_ms=duration_ms,
                 success=200 <= response.status_code < 300,
                 eval_result=eval_values,
+                response_headers=dict(response.headers),
             )
 
         except requests.RequestException as e:

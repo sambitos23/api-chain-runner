@@ -1,0 +1,30 @@
+<div id="env-modal" class="request-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="env-title">
+    <div class="env-panel">
+        <header class="rp-header">
+            <div class="rp-title">
+                <span class="env-logo"><svg class="icon"><use href="#i-key"/></svg></span>
+                <h3 id="env-title">Environment variables</h3>
+                <span class="rp-step-no" id="env-count"></span>
+            </div>
+            <button id="env-close" type="button" class="rp-icon-btn" aria-label="Close" title="Close (Esc)"><svg class="icon"><use href="#i-x"/></svg></button>
+        </header>
+        <div class="env-toolbar">
+            <div class="env-search">
+                <svg class="icon icon-sm"><use href="#i-search"/></svg>
+                <input id="env-search" type="text" placeholder="Filter variables" autocomplete="off" spellcheck="false" aria-label="Filter variables">
+            </div>
+            <select id="env-file" class="env-file hidden" aria-label=".env file"></select>
+            <button id="env-reveal" type="button" class="rp-btn rp-btn-sm"><svg class="icon icon-sm"><use href="#i-eye"/></svg><span>Show values</span></button>
+            <button id="env-add" type="button" class="rp-btn rp-btn-sm env-add-btn"><svg class="icon icon-sm"><use href="#i-plus"/></svg><span>Add variable</span></button>
+        </div>
+        <div id="env-list" class="env-list"></div>
+        <div class="env-hint">Use a variable in any flow as <code>${ENV:NAME}</code>. File: <code id="env-path"></code></div>
+        <footer class="env-footer">
+            <span id="env-status" class="env-status"></span>
+            <div class="env-footer-actions">
+                <button id="env-cancel" type="button" class="rp-btn">Cancel</button>
+                <button id="env-save" type="button" class="rp-send env-save" disabled><svg class="icon icon-sm"><use href="#i-save"/></svg><span>Save</span></button>
+            </div>
+        </footer>
+    </div>
+</div>

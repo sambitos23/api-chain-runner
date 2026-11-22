@@ -37,8 +37,14 @@
                     <svg class="icon"><use href="#i-file"/></svg> Documentation
                 </a>
             </div>
+            <div class="nav-section nav-steps-section">
+                <span class="nav-label">Steps <span class="nav-count">{{ chain.steps | length }}</span></span>
+                <div id="sidebar-steps" class="sidebar-steps" role="list"></div>
+            </div>
         </nav>
+        {% include 'env_button.html' %}
     </aside>
+    {% include 'env_modal.html' %}
 
     <main class="main-content dot-bg">
         <div class="topbar">
@@ -59,8 +65,9 @@
                 <span id="editor-status" class="detail-save-status"></span>
                 <span class="topbar-sep"></span>
                 <button id="run-btn" class="btn btn-primary">
-                    <svg class="icon icon-sm"><use href="#i-play"/></svg> Run Chain
+                    <svg class="icon icon-sm"><use href="#i-play"/></svg> <span id="run-btn-label">Run Chain</span>
                 </button>
+                <button id="clear-selection-btn" type="button" class="btn btn-ghost hidden" title="Clear selected steps (Esc)">Clear selection</button>
                 <button id="pause-btn" class="btn btn-subtle hidden">
                     <svg class="icon icon-sm"><use href="#i-pause"/></svg> Pause
                 </button>
@@ -84,13 +91,13 @@
                         <span class="chip-value">{{ chain.variables | join(', ') }}</span>
                     </div>
                     {% endif %}
+                    <div class="info-chip info-chip-hint">
+                        <span class="chip-label">Tip</span>
+                        <span class="chip-value">Ctrl/Cmd + click steps to run only those</span>
+                    </div>
                 </div>
                 <div class="flow-canvas-wrapper">
                     <div id="flow-canvas" class="flow-canvas"></div>
-                    <button id="add-step-btn" type="button" class="add-step-btn" aria-label="Add Step">
-                        <span class="add-step-plus" aria-hidden="true">+</span>
-                        <span class="add-step-label">Add Step</span>
-                    </button>
                 </div>
 
                 <div id="response-panel" class="response-panel hidden">
@@ -150,6 +157,109 @@
         </div>
     </div>
 
+    <div id="request-modal" class="request-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="req-title">
+        <div class="request-panel">
+            <header class="rp-header">
+                <div class="rp-title">
+                    <span id="rp-method-badge" class="rp-badge">GET</span>
+                    <h3 id="req-title">Request</h3>
+                    <span id="rp-step-no" class="rp-step-no"></span>
+                </div>
+                <div class="rp-actions">
+                    <button id="req-curl" type="button" class="rp-btn" title="Copy this request as a cURL command">
+                        <svg class="icon icon-sm"><use href="#i-terminal"/></svg><span>Copy cURL</span>
+                    </button>
+                    <button id="req-edit-step" type="button" class="rp-btn" title="Open this step in the editor drawer">
+                        <svg class="icon icon-sm"><use href="#i-edit"/></svg><span>Edit step</span>
+                    </button>
+                    <button id="req-close" type="button" class="rp-icon-btn" aria-label="Close request panel" title="Close (Esc)">
+                        <svg class="icon"><use href="#i-x"/></svg>
+                    </button>
+                </div>
+            </header>
+
+            <div class="rp-urlbar">
+                <select id="req-method" class="rp-method" aria-label="HTTP method">
+                    <option>GET</option><option>POST</option><option>PUT</option><option>PATCH</option>
+                    <option>DELETE</option><option>HEAD</option><option>OPTIONS</option>
+                </select>
+                <input id="req-url" type="text" class="rp-url" aria-label="Request URL" placeholder="Enter request URL" autocomplete="off" spellcheck="false">
+                <button id="req-send" type="button" class="rp-send" title="Send (Ctrl/Cmd + Enter)">
+                    <svg class="icon icon-sm"><use href="#i-play"/></svg>
+                    <span id="req-send-label">Send</span>
+                    <kbd class="rp-kbd">⌘↵</kbd>
+                </button>
+            </div>
+            <div id="req-resolved" class="rp-resolved hidden"></div>
+
+            <div class="rp-body" id="rp-body">
+                <section class="rp-request" id="rp-request">
+                    <div class="rp-tabs" data-group="request" role="tablist">
+                        <button type="button" class="rp-tab active" data-tab="params">Params<span class="rp-count" id="req-count-params"></span></button>
+                        <button type="button" class="rp-tab" data-tab="headers">Headers<span class="rp-count" id="req-count-headers"></span></button>
+                        <button type="button" class="rp-tab" data-tab="body">Body<span class="rp-dot" id="req-dot-body"></span></button>
+                    </div>
+                    <div id="req-note" class="rp-note hidden"></div>
+                    <div class="rp-pane" data-pane="params"></div>
+                    <div class="rp-pane hidden" data-pane="headers"></div>
+                    <div class="rp-pane hidden" data-pane="body">
+                        <div class="rp-seg" id="req-body-modes" role="group" aria-label="Body type">
+                            <button type="button" class="rp-seg-btn" data-mode="none">None</button>
+                            <button type="button" class="rp-seg-btn" data-mode="json">JSON</button>
+                            <button type="button" class="rp-seg-btn" data-mode="form">Form-data</button>
+                            <button type="button" class="rp-seg-btn" data-mode="urlencoded">x-www-form-urlencoded</button>
+                        </div>
+                        <div class="rp-bodymode" data-bodymode="none">
+                            <div class="rp-none">This request has no body.</div>
+                        </div>
+                        <div class="rp-bodymode hidden" data-bodymode="json">
+                            <div class="rp-body-bar">
+                                <span id="req-json-state" class="rp-json-state"></span>
+                                <button id="req-beautify" type="button" class="rp-btn rp-btn-sm"><svg class="icon icon-sm"><use href="#i-braces"/></svg><span>Beautify</span></button>
+                            </div>
+                            <textarea id="req-body" class="rp-textarea" spellcheck="false" placeholder='{ "key": "value" }'></textarea>
+                        </div>
+                        <div class="rp-bodymode hidden" data-bodymode="form"></div>
+                        <div class="rp-bodymode hidden" data-bodymode="urlencoded"></div>
+                        <div id="req-body-note" class="rp-note hidden"></div>
+                    </div>
+                </section>
+
+                <div class="rp-split" id="rp-split" title="Drag to resize (double-click to reset)"><span></span></div>
+
+                <section class="rp-response">
+                    <div class="rp-response-head">
+                        <span class="rp-section-title">Response</span>
+                        <span id="req-meta" class="rp-meta"></span>
+                        <div class="rp-toolbar">
+                            <button id="req-wrap" type="button" class="rp-btn rp-btn-sm" title="Toggle line wrapping"><svg class="icon icon-sm"><use href="#i-wrap"/></svg><span>Wrap</span></button>
+                            <button id="req-copy" type="button" class="rp-btn rp-btn-sm" title="Copy response body"><svg class="icon icon-sm"><use href="#i-copy"/></svg><span>Copy</span></button>
+                        </div>
+                    </div>
+                    <div class="rp-tabs" data-group="response" role="tablist">
+                        <button type="button" class="rp-tab active" data-tab="resp-body">Body</button>
+                        <button type="button" class="rp-tab" data-tab="resp-headers">Headers<span class="rp-count" id="req-count-resp-headers"></span></button>
+                    </div>
+                    <div id="req-response" class="rp-response-body"></div>
+                </section>
+            </div>
+        </div>
+    </div>
+    <div id="run-inputs-modal" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="run-inputs-title">
+        <div class="modal-panel run-inputs-panel">
+            <div class="modal-header">
+                <h3 id="run-inputs-title">Run selected steps</h3>
+                <button id="run-inputs-close" type="button" class="btn-icon-only" aria-label="Close"><svg class="icon"><use href="#i-x"/></svg></button>
+            </div>
+            <div id="run-inputs-body" class="modal-body run-inputs-body"></div>
+            <div class="modal-footer">
+                <button id="run-inputs-cancel" type="button" class="btn btn-ghost btn-sm">Cancel</button>
+                <button id="run-inputs-run" type="button" class="btn btn-primary btn-sm">
+                    <svg class="icon icon-sm"><use href="#i-play"/></svg> Run
+                </button>
+            </div>
+        </div>
+    </div>
     <script id="chain-json" type="application/json">{{ chain | tojson | safe }}</script>
     <script>
         const CHAIN_DATA = JSON.parse(document.getElementById('chain-json').textContent);
@@ -157,6 +267,7 @@
     </script>
     <script src="{{ url_for('static', filename='theme.js') }}"></script>
     <script src="{{ url_for('static', filename='sidebar.js') }}"></script>
+    <script src="{{ url_for('static', filename='env.js') }}"></script>
     <script src="{{ url_for('static', filename='flow.js') }}"></script>
 </body>
 </html>
