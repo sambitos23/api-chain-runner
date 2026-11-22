@@ -2,6 +2,7 @@
 
 from pathlib import Path
 
+import pytest
 import yaml
 
 from api_chain_runner.runner import ChainRunner
@@ -174,3 +175,71 @@ def test_delete_uses_in_app_confirmation_popup():
     assert "window.confirm" not in script
     assert "deleteConfirmModal.classList.remove(\"hidden\")" in script
     assert "method: \"DELETE\"" in script
+
+
+@pytest.mark.parametrize(
+    "position, expected",
+    [(0, ["new", "first", "second"]), (1, ["first", "new", "second"]), (2, ["first", "second", "new"]), (None, ["first", "second", "new"])],
+)
+def test_insert_step_at_position(tmp_path, monkeypatch, position, expected):
+    flow = write_flow(tmp_path)
+    response = client_for(tmp_path, monkeypatch).post(
+        "/api/flow/steps.yaml/step",
+        json={"step": {"name": "new", "url": "https://example.test/new", "method": "GET"}, "position": position},
+    )
+    assert response.status_code == 200
+    stored = yaml.safe_load(flow.read_text(encoding="utf-8"))
+    assert [step["name"] for step in stored["chain"]] == expected
+
+
+@pytest.mark.parametrize("position", [-1, 3, "1", True, 1.5])
+def test_insert_step_rejects_invalid_position(tmp_path, monkeypatch, position):
+    flow = write_flow(tmp_path)
+    before = flow.read_text(encoding="utf-8")
+    response = client_for(tmp_path, monkeypatch).post(
+        "/api/flow/steps.yaml/step",
+        json={"step": {"name": "new", "url": "https://example.test/new", "method": "GET"}, "position": position},
+    )
+    assert response.status_code == 400
+    assert flow.read_text(encoding="utf-8") == before
+
+
+def test_add_step_button_is_per_card_and_hover_revealed():
+    root = Path(__file__).resolve().parents[1] / "api_chain_runner/ui"
+    js = (root / "static/flow.js").read_text(encoding="utf-8")
+    css = (root / "static/style.css").read_text(encoding="utf-8")
+    html = (root / "templates/flow.html").read_text(encoding="utf-8")
+    assert 'id="add-step-btn"' not in html
+    assert "buildInsertButton(i + 1" in js and "position: insertPosition" in js
+    assert ".step-node:hover > .insert-step-btn" in css
+
+
+def test_manual_step_without_instruction_is_rejected_without_writing(tmp_path, monkeypatch):
+    flow = write_flow(tmp_path)
+    before = flow.read_text(encoding="utf-8")
+    response = client_for(tmp_path, monkeypatch).post(
+        "/api/flow/steps.yaml/step", json={"step": {"name": "check", "manual": True, "instruction": "  "}}
+    )
+    assert response.status_code == 400
+    assert flow.read_text(encoding="utf-8") == before
+
+
+def test_manual_step_can_be_inserted_mid_flow_and_the_flow_still_loads(tmp_path, monkeypatch):
+    flow = write_flow(tmp_path)
+    response = client_for(tmp_path, monkeypatch).post(
+        "/api/flow/steps.yaml/step",
+        json={
+            "step": {"name": "approve", "manual": True, "instruction": "Check the dashboard", "print_ref": ["first.id"],
+                     "delay": 0, "continue_on_error": True},
+            "position": 1,
+        },
+    )
+    assert response.status_code == 200
+    steps = ChainRunner(str(flow)).steps
+    assert [s.name for s in steps] == ["first", "approve", "second"] and steps[1].manual is True
+
+
+def test_new_step_drawer_offers_manual_type():
+    js = (Path(__file__).resolve().parents[1] / "api_chain_runner/ui/static/flow.js").read_text(encoding="utf-8")
+    assert 'id="new-step-type"' in js and 'data-type="manual"' in js
+    assert "updates.manual = true" in js and "blankStep(wantManual" in js

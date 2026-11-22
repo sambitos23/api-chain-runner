@@ -105,6 +105,7 @@ class StepDefinition:
     eval_condition: str | None = None  # Python expression to evaluate using eval_keys values
     success_message: str | None = None  # message to print on success condition
     failure_message: str | None = None  # message to print on failure condition
+    body_type: str | None = None  # runtime only (UI request panel): None/"json" (default), "form" (multipart), "urlencoded"
 
     def validate(self) -> None:
         """Validate this step definition.
@@ -158,6 +159,7 @@ class StepResult:
     success: bool
     error: str | None = None
     eval_result: dict | None = None  # extracted eval_keys values (logged to CSV instead of full response)
+    response_headers: dict | None = None  # HTTP response headers (used by the UI request panel)
 
 
 @dataclass

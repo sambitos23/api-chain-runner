@@ -393,9 +393,75 @@ This opens a local web server at `http://127.0.0.1:5656` with:
 - **Run from UI** — execute flows live with real-time pass/fail status and color-coded HTTP status codes
 - **Step Responses** — response table with status, duration, and resizable response body preview
 - **Step Editor** — click any step to edit URL, headers, payload directly and save back to the YAML file
+- **Run Selected Steps** — Ctrl/Cmd+click steps to run only those; a popup asks for the payload and query-param values, with the keys filled in for you
+- **Retry Failed Steps** — when a stop-on-fail step fails, a Retry button re-runs it and continues the chain with the existing context
+- **Add Step on Hover** — hover any step card to insert a new step right after it (API request or manual step)
+- **Step List in the Sidebar** — every step of the open flow is listed with its method; click one to jump to it and open the request panel
+- **Request Panel** — a Postman-style window that sends just one step: edit the method, URL, params, headers and body (JSON, form-data with file uploads, or urlencoded), then see the response with highlighted JSON, status, time, size and headers
+- **Environment Variables Editor** — an **Environment** button at the bottom of the sidebar opens a popup to view, add, edit and delete the variables in your `.env` file
+- **API or Manual Steps** — the Add Step drawer lets you pick an API request or a manual step
+- **Glass Design** — translucent glass panels over a soft blue background, tuned for both light and dark mode
 - **Full YAML Editor** — edit the raw YAML with save support
 - **Create New Flows** — create new chains from the dashboard with name, folder, and initial steps
 - **Dark / Light Mode** — toggle themes with persistent preference
+
+#### Retry a failed step
+
+When a step with `continue_on_error: false` (shown as `stop-on-fail`) fails, the chain stops and a **Retry** button appears beside that step. This covers HTTP errors and any other failure, such as an unresolved `${...}` reference. Clicking it re-runs only that step and then carries on with the rest of the chain, using the responses already collected, so earlier steps are not repeated. If the retry fails again, the button reappears.
+
+- The retry reuses the step definitions loaded when the run started. If you edit the YAML after a failure, click **Run Chain** again to pick up the change.
+- Starting a new run discards the retry option of the previous one. The server keeps the 10 most recent failed runs.
+
+#### Add a step anywhere
+
+Hover over a step card and an **Add Step** button appears below it. Clicking it opens the new-step drawer and inserts the step directly after that card. At the top of the drawer, **Step type** lets you choose an **API request** or a **Manual step**; the form switches accordingly and keeps the name you typed. A manual step needs an instruction. The first card also shows a button above it, to insert at the start.
+
+#### Run only selected steps
+
+Ctrl/Cmd+click one or more step cards to select them. A numbered badge shows the run order, and the Run button changes to **Run Selected (N)**. Click **Clear selection** or press `Esc` to deselect. A plain click still opens the step drawer.
+
+Clicking **Run Selected** opens a popup listing each selected step's **query params** (read from the `?a=b` part of the URL) and **payload** keys (nested objects and lists included). The keys fill in automatically and each value starts as the one in the YAML. Change only the values you need.
+
+- Values apply to this run only. The YAML file is never changed.
+- Typed values keep the original type: a number stays a number, and booleans use a true/false dropdown.
+- A value that references a step you did not select (for example `${login.token}`) is highlighted, because that step will not run. Enter a value to use instead.
+- Unselected steps are shown as skipped ("Not selected") and are not counted as failures.
+- A selected step whose `condition` points at a step that has not run is executed rather than silently skipped. Full runs keep the existing skip behaviour.
+- If the popup has nothing to fill in (no query params or payload), the steps run immediately.
+- Headers and file uploads are not editable in the popup.
+
+#### Send a single step (request panel)
+
+Click a step in the sidebar's **Steps** list to open a Postman-style request panel for that step. It sends exactly one request, so polling, retries, delays and conditions are ignored. Nothing is written to the YAML; use **Edit step** in the panel header to change the saved step.
+
+- **Request bar:** method dropdown, URL, and **Send** (also `Ctrl/Cmd + Enter` from anywhere in the panel).
+- **Params:** the query string as editable rows, kept in sync with the URL in both directions. Untick a row to leave it out without deleting it.
+- **Headers:** editable rows with the same on/off checkbox.
+- **Body:** choose **None**, **JSON** (with a live validity check and **Beautify**), **Form-data** or **x-www-form-urlencoded**.
+  - In **Form-data**, each row is **Text** or **File**. A file row takes a path on your machine, or use **Choose file** to pick one in the browser.
+  - Content-Type is set automatically for form bodies, so any `Content-Type` header is ignored.
+  - Steps that already use `files:` open in Form-data with their files filled in.
+  - If two form fields share a name, only the last one is sent.
+- **Response:** a status chip (for example `200 OK`), time and size, a syntax-highlighted body with Wrap and Copy, and a Headers tab (click a row to copy a value). Connection errors appear as an error card.
+- **Copy cURL:** copies the request as a ready-to-run cURL command, including `-F` parts for form-data.
+- **Resizable:** drag the divider between the request and the response.
+- `${ENV:NAME}` placeholders are substituted before sending. `${step.key}` references resolve from the last run of the flow, or from earlier sends in the panel. If one can't be resolved, the panel says so instead of sending, so run the chain first or type a literal value.
+- Unique fields (for example email or PAN) are regenerated on every send.
+
+#### Environment variables editor
+
+The **Environment** button at the bottom of the sidebar opens a popup for your `.env` file. It is available on every page.
+
+- Values are hidden by default. Use the eye on a row (or **Show values**) to reveal them, and the copy button to copy one.
+- Filter by name, add a variable, edit any name or value, or remove one. Names must use letters, digits and `_` and not start with a digit; duplicates and line breaks in values are flagged and block saving.
+- The popup edits the first existing `.env` the runner would load: the flow folder, then its parent, then the current working directory. If more than one exists, a dropdown lets you choose. If none exists, saving creates one in the flow folder with owner-only permissions.
+- Comments, blank lines and values you did not change are kept exactly as written.
+- Saved values apply to this server straight away, so the next run uses them without a restart. A run that is already in progress is not affected.
+- Use any variable in a flow as `${ENV:NAME}`.
+
+#### Network: IPv4 first (CLI and UI)
+
+Connections try IPv4 first and fall back to the normal lookup only if a host has no IPv4 address. On networks that publish IPv6 addresses but cannot route them, this avoids waiting for the connect timeout on each IPv6 address (which could take 90 seconds or more). Set `API_CHAIN_RUNNER_IPV6_FIRST=1` to turn this off.
 
 No extra setup needed — the UI is included in the package.
 

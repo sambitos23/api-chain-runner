@@ -33,7 +33,9 @@
                 <a href="#" class="nav-item active"><svg class="icon"><use href="#i-edit"/></svg> Editor</a>
             </div>
         </nav>
+        {% include 'env_button.html' %}
     </aside>
+    {% include 'env_modal.html' %}
     <main class="main-content dot-bg">
         <div class="topbar">
             <div class="breadcrumb">
@@ -54,6 +56,7 @@
     </main>
     <script>const FLOW_PATH = '{{ flow_path }}';</script>
     <script src="{{ url_for('static', filename='theme.js') }}"></script>
+    <script src="{{ url_for('static', filename='env.js') }}"></script>
     <script>
     (function() {
         const container = document.getElementById("monaco-container");
