@@ -198,9 +198,8 @@ def test_preservation_navigation_targets_active_states_and_hierarchy(templates):
     expected = {
         "index.html": (
             ('href="/" class="nav-item active"', '#i-grid', "Dashboard"),
-            ('class="nav-folder"', '#i-folder', "{{ flow.folder }}"),
+            ('class="nav-folder"', '#i-folder', "{{ folder.name }}"),
             ('href="/flow/{{ flow.path }}"', '#i-file', "{{ flow.name }}"),
-            ("nav-indent' if flow.folder", None, None),
         ),
         "flow.html": (
             ('href="/" class="nav-item"', '#i-grid', "Dashboard"),
@@ -229,7 +228,7 @@ def test_preservation_navigation_targets_active_states_and_hierarchy(templates):
     assert "nav-section" in templates["index.html"]
     assert "nav-section" in templates["flow.html"]
     assert "nav-section" in templates["docs.html"]
-    assert "nav-indent" in templates["index.html"]
+    assert "nav-group-body" in templates["index.html"]
     assert 'class="nav-folder"' in templates["index.html"]
 
 
@@ -318,8 +317,8 @@ def test_preservation_generated_name_matrix_keeps_navigation_and_layout_contract
     assert 'class="nav-item nav-file-item' in index
     assert 'data-file-name="{{ flow.name }}"' in index
     assert '<span class="nav-file-name">{{ flow.name }}</span>' in index
-    assert "flow.folder" in index
-    assert "nav-indent" in index
+    assert "folder.name" in index
+    assert "nav-group-body" in index
     assert "#i-file" in index
 
     flow = templates["flow.html"]

@@ -586,7 +586,7 @@ python -m api_chain_runner --ui flow/ --port 8080
 
 This opens a local web server at `http://127.0.0.1:5656` with:
 
-- **Dashboard** — lists all discovered YAML chain files in a card grid, with step counts and folder grouping
+- **Dashboard** — a Drive-style view of your YAML chain files: click through folders, see files that sit outside any folder, and use the search bar (press `/`) to find a flow in any folder. The sidebar shows the same folder tree
 - **Flow Visualization** — each chain is rendered as a vertical flowchart with step boxes, method badges (GET/POST/PUT/DELETE), and connector arrows
 - **Run from UI** — click "Run Chain" to execute the flow live; each step lights up with pass/fail status and HTTP status codes color-coded (green for 2xx, orange for 4xx, red for 5xx)
 - **Step Responses** — after a run, a response table shows every step's status code, duration, and response body with resizable preview

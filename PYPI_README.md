@@ -388,7 +388,7 @@ api-chain-runner --ui flow/ --port 8080
 
 This opens a local web server at `http://127.0.0.1:5656` with:
 
-- **Dashboard** — lists all discovered YAML chain files with step counts and folder grouping
+- **Dashboard** — a Drive-style view of your YAML chain files: click through folders, see files that sit outside any folder, and use the search bar (press `/`) to find a flow in any folder. The sidebar shows the same folder tree
 - **Flow Visualization** — vertical flowchart with method badges, connector arrows, and status indicators
 - **Run from UI** — execute flows live with real-time pass/fail status and color-coded HTTP status codes
 - **Step Responses** — response table with status, duration, and resizable response body preview

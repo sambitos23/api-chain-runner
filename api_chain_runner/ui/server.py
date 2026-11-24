@@ -16,7 +16,7 @@ from urllib.parse import quote, unquote, urlparse
 from pathlib import Path
 
 import yaml
-from flask import Flask, jsonify, render_template, request
+from flask import Flask, jsonify, redirect, render_template, request
 
 from api_chain_runner.runner import ChainRunner, _substitute_env_vars
 from api_chain_runner.models import VALID_CONDITION_OPERATORS
@@ -65,6 +65,37 @@ def _discover_flows(base_dir: str) -> list[dict]:
                 continue
     flows.sort(key=lambda f: f["path"])
     return flows
+
+
+def _build_flow_tree(flows: list[dict]) -> dict:
+    """Group discovered flows into a folder tree for the dashboard and sidebar.
+
+    Each node has ``name``, ``path`` (folder path, "" for the root), ``flows``,
+    ``children`` and ``total`` (flows in this folder and everything below it).
+    """
+    root: dict = {"name": "", "path": "", "flows": [], "children": [], "total": 0}
+    for flow in flows:
+        node = root
+        node["total"] += 1
+        parts = [p for p in flow["folder"].split("/") if p]
+        for i, part in enumerate(parts):
+            child = next((c for c in node["children"] if c["name"] == part), None)
+            if child is None:
+                child = {"name": part, "path": "/".join(parts[: i + 1]),
+                         "flows": [], "children": [], "total": 0}
+                node["children"].append(child)
+            node = child
+            node["total"] += 1
+        node["flows"].append(flow)
+
+    def _sort(node: dict) -> None:
+        node["children"].sort(key=lambda c: c["name"].lower())
+        node["flows"].sort(key=lambda f: f["name"].lower())
+        for c in node["children"]:
+            _sort(c)
+
+    _sort(root)
+    return root
 
 
 def _normalize_conditions(value, *, field_name="condition") -> list[dict[str, str]]:
@@ -578,7 +609,17 @@ def _run_chain_thread(
 @app.route("/")
 def index():
     flows = _discover_flows(_flow_dir)
-    return render_template("index.html", flows=flows)
+    tree = _build_flow_tree(flows)
+    # Drive-style navigation: ?folder=a/b shows the contents of that folder.
+    wanted = [p for p in request.args.get("folder", "").split("/") if p]
+    current, crumbs = tree, []
+    for part in wanted:
+        nxt = next((c for c in current["children"] if c["name"] == part), None)
+        if nxt is None:
+            return redirect("/")
+        current = nxt
+        crumbs.append(nxt)
+    return render_template("index.html", flows=flows, tree=tree, current=current, crumbs=crumbs)
 
 
 @app.route("/flow/<path:flow_path>")
