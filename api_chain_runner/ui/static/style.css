@@ -1508,3 +1508,68 @@ select.form-input:focus { box-shadow: 0 0 0 3px var(--accent-bg); }
     .env-valwrap { grid-column: 1; }
     .env-del { opacity: 1; }
 }
+
+/* ── Flow search + folder tree (dashboard and sidebar) ───── */
+.is-filtered-out { display: none !important; }
+.nav-empty.hidden, #search-empty.hidden, #flow-tree.hidden { display: none; }
+
+/* Sidebar folders */
+.nav-tree { padding-bottom: 0.5rem; }
+.nav-group > summary { list-style: none; cursor: pointer; }
+.nav-group > summary::-webkit-details-marker { display: none; }
+.nav-group > .nav-folder { padding: 0.4rem 1rem 0.4rem 0.9rem; color: var(--text-secondary); transition: background 0.15s, color 0.15s; }
+.nav-group > .nav-folder:hover { background: var(--sidebar-active); color: var(--text); }
+.nav-folder-name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nav-chevron { transition: transform 0.15s; flex-shrink: 0; }
+details:not([open]) > summary > .nav-chevron { transform: rotate(-90deg); }
+.nav-count {
+    font-size: 0.65rem; font-weight: 600; color: var(--text-muted); background: var(--bg-card);
+    border: 1px solid var(--border); border-radius: 999px; padding: 0 0.4rem; line-height: 1.5; flex-shrink: 0;
+}
+.nav-group-body { margin-left: 1.1rem; border-left: 1px solid var(--border); }
+.nav-group-body > .nav-item { padding-left: 0.9rem; }
+.nav-tree > .nav-item { padding-left: 1.25rem; }
+
+/* Dashboard, Drive style: centred search, folder chips, then files */
+.drive-hero { display: flex; align-items: center; justify-content: space-between; gap: 1rem 2rem; flex-wrap: wrap; margin: 0.25rem 0 1.75rem; }
+.drive-hero h1 { font-size: 1.6rem; font-weight: 600; }
+.search-bar {
+    display: flex; align-items: center; gap: 0.6rem; color: var(--text-muted);
+    background: var(--bg-card); border: 1px solid var(--border);
+    transition: border-color 0.15s, box-shadow 0.15s, background 0.15s;
+}
+.search-bar-hero { width: min(480px, 100%); height: 48px; padding: 0 1.1rem; border-radius: 999px; }
+.search-bar:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-bg); color: var(--accent); }
+.search-input {
+    flex: 1; min-width: 0; background: transparent; border: none; outline: none;
+    color: var(--text); font: inherit; font-size: 0.95rem; padding: 0; height: 100%;
+    -webkit-appearance: none; appearance: none;
+}
+.search-input::placeholder { color: var(--text-muted); }
+.search-input::-webkit-search-cancel-button { cursor: pointer; }
+.search-kbd {
+    font-family: 'SF Mono','Fira Code',monospace; font-size: 0.7rem; color: var(--text-muted);
+    border: 1px solid var(--border); border-radius: 4px; padding: 0 0.4rem; line-height: 1.5;
+}
+.search-bar:focus-within .search-kbd { display: none; }
+
+.drive-section { margin-bottom: 1.75rem; }
+.drive-section-title { font-size: 0.85rem; font-weight: 600; color: var(--text-secondary); margin-bottom: 0.7rem; }
+.drive-empty { font-size: 0.85rem; color: var(--text-muted); }
+.folder-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 0.75rem; }
+.folder-chip {
+    display: flex; align-items: center; gap: 0.75rem; padding: 0.8rem 1rem; min-width: 0;
+    background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius);
+    color: var(--text); text-decoration: none; transition: background 0.15s, border-color 0.15s, transform 0.15s;
+}
+.folder-chip:hover { background: var(--bg-card-hover); border-color: var(--accent); transform: translateY(-1px); }
+.folder-chip > .icon { width: 22px; height: 22px; color: var(--accent); }
+.folder-chip-text { display: flex; flex-direction: column; min-width: 0; }
+.folder-chip-name { font-size: 0.88rem; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.folder-chip-meta { font-size: 0.72rem; color: var(--text-muted); }
+
+/* Files from other folders only show up while searching */
+.flow-card.search-only { display: none; }
+body.is-searching .flow-card.search-only { display: flex; }
+body.is-searching #folder-section, body.is-searching #no-direct-files { display: none; }
+body.is-searching #file-section .drive-section-title::after { content: " (all folders)"; font-weight: 400; color: var(--text-muted); }

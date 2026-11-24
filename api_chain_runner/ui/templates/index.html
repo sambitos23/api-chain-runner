@@ -26,22 +26,30 @@
                     <svg class="icon"><use href="#i-grid"/></svg> Dashboard
                 </a>
             </div>
+        {# Sidebar folder tree: folders first (collapsible), then the flows in each folder. #}
+        {% macro nav_tree(node) %}
+            {% for folder in node.children %}
+            <details class="nav-group" data-folder="{{ folder.path }}" open>
+                <summary class="nav-folder">
+                    <svg class="icon icon-sm nav-chevron"><use href="#i-chevron-down"/></svg>
+                    <svg class="icon icon-sm"><use href="#i-folder"/></svg>
+                    <span class="nav-folder-name">{{ folder.name }}</span>
+                    <span class="nav-count">{{ folder.total }}</span>
+                </summary>
+                <div class="nav-group-body">{{ nav_tree(folder) }}</div>
+            </details>
+            {% endfor %}
+            {% for flow in node.flows %}
+            <a href="/flow/{{ flow.path }}" class="nav-item nav-file-item" data-file-name="{{ flow.name }}" data-search="{{ flow.path | lower }}">
+                <svg class="icon"><use href="#i-file"/></svg><span class="nav-file-name">{{ flow.name }}</span>
+            </a>
+            {% endfor %}
+        {% endmacro %}
             <div class="nav-section">
                 <span class="nav-label">Flows</span>
-                {% set ns = namespace(current_folder='') %}
-                {% for flow in flows %}
-                    {% if flow.folder != ns.current_folder %}
-                        {% set ns.current_folder = flow.folder %}
-                        {% if flow.folder %}
-                        <div class="nav-folder">
-                            <svg class="icon icon-sm"><use href="#i-folder"/></svg> {{ flow.folder }}
-                        </div>
-                        {% endif %}
-                    {% endif %}
-                    <a href="/flow/{{ flow.path }}" class="nav-item nav-file-item {{ 'nav-indent' if flow.folder else '' }}" data-file-name="{{ flow.name }}">
-                        <svg class="icon"><use href="#i-file"/></svg><span class="nav-file-name">{{ flow.name }}</span>
-                    </a>
-                {% endfor %}
+                <div class="nav-tree" id="nav-tree">
+                    {{ nav_tree(tree) }}
+                </div>
             </div>
         </nav>
         {% include 'env_button.html' %}
@@ -52,7 +60,15 @@
         <div class="topbar">
             <div class="breadcrumb">
                 <svg class="icon icon-sm"><use href="#i-chain"/></svg>
+                {% if crumbs %}
+                <a href="/">Dashboard</a>
+                {% for c in crumbs %}
+                <span class="bc-sep">/</span>
+                {% if loop.last %}<span>{{ c.name }}</span>{% else %}<a href="/?folder={{ c.path | urlencode }}">{{ c.name }}</a>{% endif %}
+                {% endfor %}
+                {% else %}
                 <span>Dashboard</span>
+                {% endif %}
             </div>
             <div class="topbar-actions">
                 <button class="btn btn-subtle" id="create-flow-btn">
@@ -61,32 +77,69 @@
             </div>
         </div>
         <div class="page-content">
-            <div class="page-header">
-                <h1>All Flows</h1>
-                <p class="page-subtitle">{{ flows | length }} chain{{ 's' if flows | length != 1 else '' }} available</p>
-            </div>
-            <div class="flow-grid">
-                {% for flow in flows %}
-                <div class="flow-card" onclick="window.location='/flow/{{ flow.path }}'">
-                    <div class="card-top">
-                        <div class="card-icon"><svg class="icon icon-lg"><use href="#i-file"/></svg></div>
-                        <div class="card-meta">
-                            <h3>{{ flow.name }}</h3>
-                            <span class="card-path">{{ flow.path }}</span>
-                        </div>
-                    </div>
-                    <div class="card-bottom">
-                        <div class="card-stat">
-                            <span class="stat-value">{{ flow.step_count }}</span>
-                            <span class="stat-label">steps</span>
-                        </div>
-                        <div class="card-actions">
-                            {% if flow.has_docs %}<a href="/flow/{{ flow.path }}/docs" class="card-doc-link" onclick="event.stopPropagation()">Docs</a>{% endif %}
-                            <svg class="icon icon-sm card-arrow"><use href="#i-arrow-right"/></svg>
-                        </div>
-                    </div>
+            <div class="drive-hero">
+                <div class="drive-hero-text">
+                    <h1>{{ current.name if current.path else 'All Flows' }}</h1>
+                    <p class="page-subtitle" id="flow-count" data-total="{{ flows | length }}">{{ current.total }} chain{{ 's' if current.total != 1 else '' }} {{ 'in this folder' if current.path else 'available' }}</p>
                 </div>
-                {% endfor %}
+                {% if flows %}
+                <label class="search-bar search-bar-hero" for="flow-search">
+                    <svg class="icon"><use href="#i-search"/></svg>
+                    <input type="search" id="flow-search" class="search-input" placeholder="Search all flows by name or folder" autocomplete="off" aria-label="Search flows">
+                    <kbd class="search-kbd" title="Press / to focus search">/</kbd>
+                </label>
+                {% endif %}
+            </div>
+            <div id="flow-tree">
+                {% if current.children %}
+                <section class="drive-section" id="folder-section">
+                    <h2 class="drive-section-title">Folders</h2>
+                    <div class="folder-grid">
+                        {% for folder in current.children %}
+                        <a class="folder-chip" href="/?folder={{ folder.path | urlencode }}" title="{{ folder.path }}">
+                            <svg class="icon"><use href="#i-folder"/></svg>
+                            <span class="folder-chip-text">
+                                <span class="folder-chip-name">{{ folder.name }}</span>
+                                <span class="folder-chip-meta">{{ folder.total }} flow{{ 's' if folder.total != 1 else '' }}</span>
+                            </span>
+                        </a>
+                        {% endfor %}
+                    </div>
+                </section>
+                {% endif %}
+                <section class="drive-section" id="file-section">
+                    <h2 class="drive-section-title">Files</h2>
+                    <div class="flow-grid">
+                        {% for flow in flows %}
+                        <div class="flow-card{{ '' if flow.folder == current.path else ' search-only' }}" data-search="{{ flow.path | lower }}" onclick="window.location='/flow/{{ flow.path }}'">
+                            <div class="card-top">
+                                <div class="card-icon"><svg class="icon icon-lg"><use href="#i-file"/></svg></div>
+                                <div class="card-meta">
+                                    <h3>{{ flow.name }}</h3>
+                                    <span class="card-path">{{ flow.path }}</span>
+                                </div>
+                            </div>
+                            <div class="card-bottom">
+                                <div class="card-stat">
+                                    <span class="stat-value">{{ flow.step_count }}</span>
+                                    <span class="stat-label">steps</span>
+                                </div>
+                                <div class="card-actions">
+                                    {% if flow.has_docs %}<a href="/flow/{{ flow.path }}/docs" class="card-doc-link" onclick="event.stopPropagation()">Docs</a>{% endif %}
+                                    <svg class="icon icon-sm card-arrow"><use href="#i-arrow-right"/></svg>
+                                </div>
+                            </div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                    {% if not current.flows %}
+                    <p class="drive-empty" id="no-direct-files">No flows directly in this {{ 'folder' if current.path else 'directory' }}.</p>
+                    {% endif %}
+                </section>
+            </div>
+            <div class="empty-state hidden" id="search-empty">
+                <svg class="icon icon-xl" style="color:var(--text-muted)"><use href="#i-search"/></svg>
+                <p>No flows match your search</p>
             </div>
             {% if not flows %}
             <div class="empty-state">
@@ -137,5 +190,6 @@
     <script src="{{ url_for('static', filename='sidebar.js') }}"></script>
     <script src="{{ url_for('static', filename='env.js') }}"></script>
     <script src="{{ url_for('static', filename='create.js') }}"></script>
+    <script src="{{ url_for('static', filename='flow-search.js') }}"></script>
 </body>
 </html>

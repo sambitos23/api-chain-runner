@@ -359,7 +359,7 @@ def test_generated_values_preserve_raw_copy_and_action_boundary(value, action_co
 
 def test_demo_fixture_preserves_eval_configuration_and_suppresses_eval_key_side_output():
     """**Validates: Requirements 2.1, 3.3, 3.5**"""
-    fixture = yaml.safe_load((ROOT / "flow/ui_condition_long_content_demo.yaml").read_text(encoding="utf-8"))
+    fixture = yaml.safe_load((ROOT / "flow/others/ui_condition_long_content_demo.yaml").read_text(encoding="utf-8"))
     first = fixture["chain"][0]
     assert first["print_keys"] == [
         "slideshow.title",
