@@ -591,7 +591,7 @@ This opens a local web server at `http://127.0.0.1:5656` with:
 - **Run from UI** — click "Run Chain" to execute the flow live; each step lights up with pass/fail status and HTTP status codes color-coded (green for 2xx, orange for 4xx, red for 5xx)
 - **Step Responses** — after a run, a response table shows every step's status code, duration, and response body with resizable preview
 - **Step Editor** — click any step to open a slide-over drawer showing full details (URL, headers, payload, polling config); editable fields can be modified and saved directly back to the YAML file
-- **Run Selected Steps** — Ctrl/Cmd+click steps to run only those; a popup asks for the payload and query-param values, with the keys filled in for you
+- **Run Selected Steps** — Ctrl/Cmd+click steps to run only those; a popup asks for the payload, query-param and file values, with the keys filled in for you
 - **Retry Failed Steps** — when a stop-on-fail step fails, a Retry button re-runs it and continues the chain with the existing context
 - **Add Step on Hover** — hover any step card to insert a new step right after it (API request or manual step)
 - **Step List in the Sidebar** — every step of the open flow is listed with its method; click one to jump to it and open the request panel
@@ -620,7 +620,7 @@ Hover over a step card and an **Add Step** button appears below it. Clicking it 
 
 Ctrl/Cmd+click one or more step cards to select them. A numbered badge shows the run order, and the Run button changes to **Run Selected (N)**. Click **Clear selection** or press `Esc` to deselect. A plain click still opens the step drawer.
 
-Clicking **Run Selected** opens a popup listing each selected step's **query params** (read from the `?a=b` part of the URL) and **payload** keys (nested objects and lists included). The keys fill in automatically and each value starts as the one in the YAML. Change only the values you need.
+Clicking **Run Selected** opens a popup listing each selected step's **query params** (read from the `?a=b` part of the URL), **payload** keys (nested objects and lists included) and **files**. The keys fill in automatically and each value starts as the one in the YAML. Change only the values you need.
 
 - Values apply to this run only. The YAML file is never changed.
 - Typed values keep the original type: a number stays a number, and booleans use a true/false dropdown.
@@ -628,7 +628,8 @@ Clicking **Run Selected** opens a popup listing each selected step's **query par
 - Unselected steps are shown as skipped ("Not selected") and are not counted as failures.
 - A selected step whose `condition` points at a step that has not run is executed rather than silently skipped. Full runs keep the existing skip behaviour.
 - If the popup has nothing to fill in (no query params or payload), the steps run immediately.
-- Headers and file uploads are not editable in the popup.
+- Steps that upload files (`files:`) list each file under **Files**. Type a different path on your machine, or click **Choose file** to pick one in the browser; a picked file is uploaded with the run and removed afterwards, and it also applies if you retry a failed step.
+- Headers are not editable in the popup.
 
 #### Send a single step (request panel)
 

@@ -860,9 +860,22 @@
         return fields;
     }
 
+    function fileFields(step) {
+        const out = [];
+        if (step.manual || !step.files || typeof step.files !== "object") return out;
+        Object.entries(step.files).forEach(([field, v]) => {
+            const list = Array.isArray(v) ? v : [v];
+            list.forEach((path, index) => out.push({
+                kind: "file", field, index, label: list.length > 1 ? `${field}[${index}]` : field,
+                value: String(path), original: String(path), file: null,
+            }));
+        });
+        return out;
+    }
+
     function stepFields(step) {
-        if (step.manual) return { query: [], payload: [] };
-        return { query: queryFields(step), payload: payloadFields(step.payload) };
+        if (step.manual) return { query: [], payload: [], files: [] };
+        return { query: queryFields(step), payload: payloadFields(step.payload), files: fileFields(step) };
     }
 
     function unselectedRefs(value, selectedNames) {
@@ -891,7 +904,7 @@
 
         order.forEach(i => {
             const step = steps[i];
-            const { query, payload } = stepFields(step);
+            const { query, payload, files } = stepFields(step);
             const section = document.createElement("section");
             section.className = "run-inputs-step";
             section.innerHTML = `<div class="run-inputs-step-head">
@@ -899,7 +912,7 @@
                 <span class="run-inputs-step-name">${esc(step.name)}</span>
                 <span class="run-inputs-method">${esc((step.method || "").toUpperCase())}</span>
             </div>`;
-            [["Query params", query], ["Payload", payload]].forEach(([title, list]) => {
+            [["Query params", query], ["Payload", payload], ["Files", files]].forEach(([title, list]) => {
                 if (!list.length) return;
                 const group = document.createElement("div");
                 group.className = "run-inputs-group";
@@ -912,6 +925,37 @@
                     key.className = "run-inputs-key";
                     key.textContent = field.label;
                     key.title = field.label;
+                    if (field.kind === "file") {
+                        // A path on this machine, or a file picked in the browser (uploaded with the run).
+                        const cell = document.createElement("div");
+                        cell.className = "run-inputs-filecell";
+                        const pathInput = document.createElement("input");
+                        pathInput.type = "text"; pathInput.className = "form-input run-inputs-input";
+                        pathInput.value = field.value; pathInput.autocomplete = "off"; pathInput.spellcheck = false;
+                        pathInput.placeholder = "Path on this machine, or choose a file";
+                        const picker = document.createElement("input");
+                        picker.type = "file"; picker.hidden = true;
+                        const browse = document.createElement("button");
+                        browse.type = "button"; browse.className = "rp-btn rp-btn-sm rp-browse";
+                        browse.innerHTML = '<svg class="icon icon-sm"><use href="#i-plus"/></svg><span>Choose file</span>';
+                        const chip = document.createElement("span");
+                        chip.className = "rp-chipfile hidden";
+                        const paint = () => {
+                            chip.classList.toggle("hidden", !field.file);
+                            pathInput.classList.toggle("hidden", !!field.file);
+                            if (field.file) chip.innerHTML = `<span class="rp-chipfile-name">${esc(field.file.name)}</span><span class="rp-chipfile-size">${formatSize(field.file.size)}</span><button type="button" class="rp-chipfile-x" aria-label="Remove chosen file">×</button>`;
+                        };
+                        browse.addEventListener("click", (e) => { e.preventDefault(); picker.click(); });
+                        picker.addEventListener("change", () => { field.file = picker.files[0] || null; paint(); });
+                        chip.addEventListener("click", (e) => {
+                            if (e.target.closest(".rp-chipfile-x")) { e.preventDefault(); field.file = null; picker.value = ""; paint(); pathInput.focus(); }
+                        });
+                        cell.append(pathInput, browse, chip, picker);
+                        row.append(key, cell);
+                        group.appendChild(row);
+                        pendingRunFields.push({ stepIndex: i, field, input: pathInput });
+                        return;
+                    }
                     let input;
                     if (field.type === "boolean") {
                         input = document.createElement("select");
@@ -944,10 +988,10 @@
                 });
                 section.appendChild(group);
             });
-            if (!query.length && !payload.length) {
+            if (!query.length && !payload.length && !files.length) {
                 const none = document.createElement("div");
                 none.className = "run-inputs-none";
-                none.textContent = "No payload or query parameters.";
+                none.textContent = "No payload, query parameters or files.";
                 section.appendChild(none);
             }
             runInputsBody.appendChild(section);
@@ -962,14 +1006,19 @@
     function submitRunInputs() {
         const order = [...selectedSteps].sort((a, b) => a - b);
         const overrides = {};
+        const uploads = [];
         pendingRunFields.forEach(({ stepIndex, field, input }) => {
-            if (input.value === field.original) return; // untouched values stay as written in the YAML
-            const entry = overrides[stepIndex] || (overrides[stepIndex] = { query: [], payload: [] });
+            const changed = field.kind === "file" ? (field.file || input.value !== field.original) : input.value !== field.original;
+            if (!changed) return; // untouched values stay as written in the YAML
+            const entry = overrides[stepIndex] || (overrides[stepIndex] = { query: [], payload: [], files: [] });
             if (field.kind === "query") entry.query.push({ index: field.index, value: input.value });
-            else entry.payload.push({ path: field.path, value: input.value });
+            else if (field.kind === "file") {
+                if (field.file) { entry.files.push({ field: field.field, index: field.index, upload: `file_${uploads.length}` }); uploads.push(field.file); }
+                else entry.files.push({ field: field.field, index: field.index, path: input.value });
+            } else entry.payload.push({ path: field.path, value: input.value });
         });
         closeRunInputs();
-        startRun({ steps: order, overrides });
+        startRun({ steps: order, overrides }, uploads);
     }
 
     document.getElementById("run-inputs-close").addEventListener("click", closeRunInputs);
@@ -1650,7 +1699,7 @@
         else startRun({});
     });
 
-    async function startRun(extraBody) {
+    async function startRun(extraBody, uploads = []) {
         runBtn.disabled = true;
         runStatus.textContent = "Starting...";
         runStatus.className = "run-status-badge running";
@@ -1670,11 +1719,16 @@
         currentResponseResults = [];
 
         try {
-            const res = await fetch("/api/run", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ flow_path: FLOW_PATH, ...extraBody }),
-            });
+            let init;
+            if (uploads.length) {
+                const fd = new FormData();
+                fd.append("meta", JSON.stringify({ flow_path: FLOW_PATH, ...extraBody }));
+                uploads.forEach((file, n) => fd.append(`file_${n}`, file, file.name));
+                init = { method: "POST", headers: { "X-ACR-Request": "1" }, body: fd };
+            } else {
+                init = { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ flow_path: FLOW_PATH, ...extraBody }) };
+            }
+            const res = await fetch("/api/run", init);
             const data = await res.json();
             if (data.error) {
                 runStatus.textContent = `Error: ${data.error}`;
