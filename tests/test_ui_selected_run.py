@@ -164,7 +164,7 @@ def test_ui_wiring_for_selection_and_values_popup():
     assert "e.ctrlKey || e.metaKey" in FLOW_JS
     assert '"contextmenu"' in FLOW_JS  # macOS reports Ctrl+click as a context menu
     assert "function openRunInputs()" in FLOW_JS
-    assert "startRun({ steps: order, overrides })" in FLOW_JS
+    assert "startRun({ steps: order, overrides }, uploads)" in FLOW_JS
     assert ".step-box.is-selected" in STYLE_CSS
     assert "var(--accent)" in STYLE_CSS.split("Step selection + run-values popup")[1]
 
@@ -179,3 +179,101 @@ def test_sidebar_lists_steps_and_keeps_documentation_link():
     assert 'id="sidebar-steps"' in sidebar
     assert 'id="i-sun"' in icons and 'id="i-moon"' in icons
     assert ".nav-step.active" in STYLE_CSS
+
+
+# ── File uploads in a selected run ─────────────────────────────────────────────
+
+import io
+import json as _json
+
+FILE_CHAIN = """
+chain:
+  - name: upload-doc
+    url: http://example.test/docs?docType=SELFIE
+    method: POST
+    files:
+      file: /original/selfie.jpg
+      extras:
+        - /original/a.png
+        - /original/b.png
+"""
+
+
+@pytest.fixture
+def file_client(tmp_path, monkeypatch):
+    (tmp_path / "flow.yaml").write_text(FILE_CHAIN, encoding="utf-8")
+    monkeypatch.setattr(server, "_flow_dir", str(tmp_path))
+    server._active_runs.clear()
+    server._retry_contexts.clear()
+    server._run_temp_dirs.clear()
+    return server.app.test_client()
+
+
+def test_popup_lists_files_and_overrides_by_path(file_client, executed):
+    overrides = {"0": {"files": [{"field": "file", "index": 0, "path": "/new/me.jpg"},
+                                 {"field": "extras", "index": 1, "path": "/new/b2.png"}]}}
+    data = _run(file_client, steps=[0], overrides=overrides)
+    assert data["status"] == "completed"
+    assert executed[0].files == {"file": "/new/me.jpg", "extras": ["/original/a.png", "/new/b2.png"]}
+
+
+def test_browser_picked_file_is_uploaded_with_the_run_and_cleaned_up(file_client, monkeypatch):
+    seen = {}
+
+    def execute(self, step):
+        path = Path(step.files["file"])
+        seen.update(name=path.name, body=path.read_bytes(), path=path)
+        return StepResult(step.name, 200, {}, 1.0, True)
+
+    monkeypatch.setattr(StepExecutor, "execute", execute)
+    meta = {"flow_path": "flow.yaml", "steps": [0],
+            "overrides": {"0": {"files": [{"field": "file", "index": 0, "upload": "file_0"}]}}}
+    res = file_client.post(
+        "/api/run",
+        data={"meta": _json.dumps(meta), "file_0": (io.BytesIO(b"SELFIEDATA"), "my selfie.jpg")},
+        content_type="multipart/form-data",
+        headers={"X-ACR-Request": "1"},
+    )
+    assert res.status_code == 200, res.get_json()
+    data = _finish(file_client, res.get_json()["run_id"])
+    assert data["status"] == "completed"
+    assert seen["name"] == "my selfie.jpg" and seen["body"] == b"SELFIEDATA"
+    deadline = time.time() + 2
+    while seen["path"].exists() and time.time() < deadline:
+        time.sleep(0.02)
+    assert not seen["path"].exists()  # temp upload removed once the run is over
+    assert server._run_temp_dirs == {}
+
+
+@pytest.mark.parametrize(
+    "files",
+    [
+        [{"field": "nope", "index": 0, "path": "/x"}],
+        [{"field": "file", "index": 3, "path": "/x"}],
+        [{"field": "extras", "index": 9, "path": "/x"}],
+        [{"field": "file", "index": 0, "path": ""}],
+    ],
+)
+def test_invalid_file_overrides_fail_the_run_without_executing(file_client, executed, files):
+    data = _run(file_client, steps=[0], overrides={"0": {"files": files}})
+    assert data["status"] == "error" and executed == []
+
+
+def test_multipart_run_requires_header_and_same_origin(file_client, executed):
+    meta = {"flow_path": "flow.yaml", "steps": [0]}
+    no_header = file_client.post("/api/run", data={"meta": _json.dumps(meta)}, content_type="multipart/form-data")
+    assert no_header.status_code == 403
+    cross = file_client.post("/api/run", data={"meta": _json.dumps(meta)}, content_type="multipart/form-data",
+                             headers={"X-ACR-Request": "1", "Origin": "http://evil.example"})
+    assert cross.status_code == 403
+    missing = file_client.post(
+        "/api/run",
+        data={"meta": _json.dumps({**meta, "overrides": {"0": {"files": [{"field": "file", "index": 0, "upload": "file_5"}]}}})},
+        content_type="multipart/form-data", headers={"X-ACR-Request": "1"},
+    )
+    assert missing.status_code == 400 and executed == []
+
+
+def test_popup_file_rows_wiring():
+    assert "function fileFields(step)" in FLOW_JS and '["Files", files]' in FLOW_JS
+    assert 'fd.append("meta"' in FLOW_JS and "upload: `file_${uploads.length}`" in FLOW_JS

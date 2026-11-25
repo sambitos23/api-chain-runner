@@ -1628,3 +1628,8 @@ body.is-searching #file-section .drive-section-title::after { content: " (all fo
 @media (min-width: 701px) {
     .step-node.has-retry-stacked > .step-index { margin-top: 3.5rem; }
 }
+
+/* File rows in the run-values popup */
+.run-inputs-filecell { display: flex; align-items: center; gap: 0.4rem; min-width: 0; }
+.run-inputs-filecell .run-inputs-input { flex: 1 1 auto; }
+.run-inputs-filecell .hidden { display: none; }

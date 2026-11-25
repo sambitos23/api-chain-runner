@@ -8,6 +8,7 @@ import glob
 import json
 import os
 import re
+import shutil
 import tempfile
 import threading
 import webbrowser
@@ -244,6 +245,14 @@ _retry_contexts: dict[str, dict] = {}
 # Last known step responses per flow file, so a single step sent from the
 # request panel can resolve ${step.key} references from earlier runs/sends.
 _flow_stores: dict[str, dict] = {}
+# Files uploaded from the browser for a selected run, removed when the run ends for good.
+_run_temp_dirs: dict[str, str] = {}
+
+
+def _cleanup_run_files(run_id: str) -> None:
+    folder = _run_temp_dirs.pop(run_id, None)
+    if folder:
+        shutil.rmtree(folder, ignore_errors=True)
 _MAX_RETRY_CONTEXTS = 10
 _run_lock = threading.Lock()
 
@@ -324,6 +333,24 @@ def _apply_overrides(runner: ChainRunner, overrides: dict) -> None:
             for item in spec["payload"]:
                 _set_payload_value(payload, item.get("path"), item.get("value"))
             changes["payload"] = payload
+        if spec.get("files"):
+            if not isinstance(step.files, dict):
+                raise ValueError(f"step '{step.name}' has no files to override")
+            files = copy.deepcopy(step.files)
+            for item in spec["files"]:
+                field, index, path = item.get("field"), item.get("index"), item.get("path")
+                if field not in files or not isinstance(path, str) or not path.strip():
+                    raise ValueError(f"invalid file override for step '{step.name}'")
+                current = files[field]
+                if isinstance(current, list):
+                    if not isinstance(index, int) or isinstance(index, bool) or not 0 <= index < len(current):
+                        raise ValueError(f"invalid file index for field '{field}'")
+                    current[index] = path.strip()
+                elif index in (0, None):
+                    files[field] = path.strip()
+                else:
+                    raise ValueError(f"invalid file index for field '{field}'")
+            changes["files"] = files
         if changes:
             runner.steps[idx] = dataclasses.replace(step, **changes)
 
@@ -436,12 +463,13 @@ def _abort_run(run_id: str, runner: ChainRunner, filepath: str, idx: int, step_r
         while len(_retry_contexts) > _MAX_RETRY_CONTEXTS:
             oldest = next(iter(_retry_contexts))
             _retry_contexts.pop(oldest, None)
+            _cleanup_run_files(oldest)
             stale = _active_runs.get(oldest)
             if stale:
                 stale["retryable"] = False
 
 
-def _run_chain_thread(
+def _run_chain_thread_inner(
     run_id: str,
     filepath: str,
     start_idx: int = 0,
@@ -680,6 +708,27 @@ def _run_chain_thread(
             _active_runs[run_id]["error"] = str(exc)
             _active_runners.pop(run_id, None)
             _manual_events.pop(run_id, None)
+
+
+def _run_chain_thread(
+    run_id: str,
+    filepath: str,
+    start_idx: int = 0,
+    runner: ChainRunner | None = None,
+    selected: set[int] | None = None,
+    overrides: dict | None = None,
+    temp_dir: str | None = None,
+):
+    """Run a chain thread and clean up uploaded files once the run can no longer be retried."""
+    if temp_dir:
+        _run_temp_dirs[run_id] = temp_dir
+    try:
+        _run_chain_thread_inner(run_id, filepath, start_idx, runner, selected, overrides)
+    finally:
+        with _run_lock:
+            status = (_active_runs.get(run_id) or {}).get("status")
+        if status != "aborted":  # an aborted run may still be retried, so keep its files
+            _cleanup_run_files(run_id)
 
 
 # ── Routes ────────────────────────────────────────────────────────────
@@ -970,7 +1019,20 @@ def api_flow_create():
 
 @app.route("/api/run", methods=["POST"])
 def api_run_chain():
-    data = request.get_json()
+    uploads = {}
+    if request.mimetype == "multipart/form-data":
+        # Needs no CORS preflight, so require same-origin and the custom header (see /send).
+        if not _same_origin(request) or request.headers.get("X-ACR-Request") != "1":
+            return jsonify({"error": "cross-origin requests are not allowed"}), 403
+        try:
+            data = json.loads(request.form.get("meta", ""))
+        except ValueError:
+            return jsonify({"error": "meta must be JSON"}), 400
+        uploads = request.files
+    else:
+        data = request.get_json()
+    if not isinstance(data, dict):
+        return jsonify({"error": "JSON body required"}), 400
     flow_path = data.get("flow_path")
     if not flow_path:
         return jsonify({"error": "flow_path required"}), 400
@@ -994,11 +1056,38 @@ def api_run_chain():
         if not isinstance(overrides, dict):
             return jsonify({"error": "overrides must be a mapping"}), 400
 
+    temp_dir = None
+    if overrides:
+        try:
+            for step_key, spec in overrides.items():
+                if not isinstance(spec, dict):
+                    return jsonify({"error": "invalid override"}), 400
+                for n, item in enumerate(spec.get("files") or []):
+                    if not isinstance(item, dict):
+                        return jsonify({"error": "invalid file override"}), 400
+                    part = item.get("upload")
+                    if not part:
+                        continue
+                    up = uploads.get(part) if hasattr(uploads, "get") else None
+                    if up is None:
+                        return jsonify({"error": f"uploaded file '{part}' is missing"}), 400
+                    if temp_dir is None:
+                        temp_dir = tempfile.mkdtemp(prefix="acr-run-")
+                    folder = Path(temp_dir) / f"{step_key}-{n}"
+                    folder.mkdir(parents=True, exist_ok=True)
+                    dest = folder / _safe_upload_name(up.filename)
+                    up.save(dest)
+                    item["path"] = str(dest)
+        except Exception as exc:
+            if temp_dir:
+                shutil.rmtree(temp_dir, ignore_errors=True)
+            return jsonify({"error": f"could not store uploaded file: {exc}"}), 400
+
     import uuid
     run_id = uuid.uuid4().hex[:8]
     t = threading.Thread(
         target=_run_chain_thread,
-        args=(run_id, abs_path, 0, None, selected, overrides),
+        args=(run_id, abs_path, 0, None, selected, overrides, temp_dir),
         daemon=True,
     )
     t.start()
