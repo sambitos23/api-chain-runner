@@ -596,6 +596,8 @@ This opens a local web server at `http://127.0.0.1:5656` with:
 - **Add Step on Hover** — hover any step card to insert a new step right after it (API request or manual step)
 - **Step List in the Sidebar** — every step of the open flow is listed with its method; click one to jump to it and open the request panel
 - **Request Panel** — a Postman-style window that sends just one step: edit the method, URL, params, headers and body (JSON, form-data with file uploads, or urlencoded), then see the response with highlighted JSON, status, time, size and headers
+- **Stop a Run** — a **Stop** button ends the run at the current step (even mid-polling or on a manual step) and shows the report of everything that ran so far, ready to export
+- **Live Print Keys** — while a polling step is running, its `print_keys` appear next to the step and refresh after every polling attempt, so you can watch values change before the step finishes
 - **Environment Variables Editor** — an **Environment** button at the bottom of the sidebar opens a popup to view, add, edit and delete the variables in your `.env` file
 - **API or Manual Steps** — the Add Step drawer lets you pick an API request or a manual step
 - **Glass Design** — translucent glass panels over a soft blue background, tuned for both light and dark mode

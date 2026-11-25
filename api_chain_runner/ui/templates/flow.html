@@ -74,6 +74,9 @@
                 <button id="resume-btn" class="btn btn-primary hidden">
                     <svg class="icon icon-sm"><use href="#i-play"/></svg> Resume
                 </button>
+                <button id="stop-btn" class="btn btn-danger hidden" title="End the run here and show the report so far">
+                    <svg class="icon icon-sm"><use href="#i-stop"/></svg> Stop
+                </button>
                 <span id="run-status" class="run-status-badge"></span>
             </div>
         </div>
@@ -157,6 +160,24 @@
         </div>
     </div>
 
+    <div id="stop-confirm-modal" class="modal-overlay stop-confirm-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="stop-confirm-title">
+        <div class="modal-panel delete-confirm-panel">
+            <div class="modal-header">
+                <h3 id="stop-confirm-title">Stop this run?</h3>
+                <button id="stop-confirm-close" type="button" class="btn-icon-only" aria-label="Close stop confirmation"><svg class="icon"><use href="#i-x"/></svg></button>
+            </div>
+            <div class="modal-body">
+                <p>The run ends at the current step. Steps that have not run yet are skipped.</p>
+                <p class="delete-confirm-warning">The report will show everything that ran so far.</p>
+            </div>
+            <div class="modal-footer">
+                <button id="stop-confirm-cancel" type="button" class="btn btn-ghost btn-sm">Keep running</button>
+                <button id="stop-confirm-ok" type="button" class="btn btn-sm delete-confirm-btn">
+                    <svg class="icon icon-sm"><use href="#i-stop"/></svg> Stop run
+                </button>
+            </div>
+        </div>
+    </div>
     <div id="request-modal" class="request-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="req-title">
         <div class="request-panel">
             <header class="rp-header">
@@ -266,6 +287,7 @@
         const FLOW_PATH = '{{ flow_path }}';
     </script>
     <script src="{{ url_for('static', filename='theme.js') }}"></script>
+    <script src="{{ url_for('static', filename='notice.js') }}"></script>
     <script src="{{ url_for('static', filename='sidebar.js') }}"></script>
     <script src="{{ url_for('static', filename='env.js') }}"></script>
     <script src="{{ url_for('static', filename='flow.js') }}"></script>

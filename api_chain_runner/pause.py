@@ -7,6 +7,17 @@ import threading
 import time
 
 
+class RunStopped(Exception):
+    """Raised inside a running step when the user asked to end the run early.
+
+    ``result`` is the last :class:`StepResult` the step produced (or ``None``).
+    """
+
+    def __init__(self, result=None) -> None:
+        super().__init__("Run stopped by user")
+        self.result = result
+
+
 class PauseController:
     """Listens for 'p' (pause) and 'r' (resume) keypresses in a background
     thread. Other code calls :meth:`wait_if_paused` to block while paused.
@@ -18,6 +29,7 @@ class PauseController:
     def __init__(self) -> None:
         self._paused = threading.Event()  # set = paused
         self._stop = threading.Event()
+        self._stop_run = threading.Event()  # set = the user asked to end the run early
         self._total_paused: float = 0.0
         self._pause_start: float | None = None
         self._lock = threading.Lock()
@@ -31,6 +43,20 @@ class PauseController:
             if self._pause_start is not None:
                 extra = time.monotonic() - self._pause_start
             return self._total_paused + extra
+
+    @property
+    def stop_requested(self) -> bool:
+        """True once :meth:`request_stop` was called."""
+        return self._stop_run.is_set()
+
+    def request_stop(self) -> None:
+        """Ask the run to end at the next safe point (also wakes a paused run)."""
+        self._stop_run.set()
+        with self._lock:
+            if self._pause_start is not None:
+                self._total_paused += time.monotonic() - self._pause_start
+                self._pause_start = None
+        self._paused.clear()
 
     def start(self) -> None:
         """Start the background keyboard listener thread."""

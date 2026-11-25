@@ -12,7 +12,7 @@ from api_chain_runner.generator import UniqueDataGenerator
 from api_chain_runner.logger import ResultLogger
 from api_chain_runner.models import LogEntry, StepDefinition, StepResult
 from api_chain_runner.net import prefer_ipv4
-from api_chain_runner.pause import PauseController
+from api_chain_runner.pause import PauseController, RunStopped
 from api_chain_runner.resolver import ReferenceResolver
 from api_chain_runner.store import ResponseStore
 
@@ -52,6 +52,9 @@ class StepExecutor:
         self.store = store
         self.logger = logger
         self.pause_controller = pause_controller
+        # Optional hook ``(step, result, attempt)`` called after every polling attempt
+        # so a UI can show intermediate responses. Errors in the hook are ignored.
+        self.on_poll_attempt = None
 
     def execute(self, step: StepDefinition) -> StepResult:
         """Execute a step, with optional polling until expected value is found.
@@ -80,6 +83,11 @@ class StepExecutor:
 
             result = self._execute_once(step, log_to_csv=False)
             attempt += 1
+            if self.on_poll_attempt is not None:
+                try:
+                    self.on_poll_attempt(step, result, attempt)
+                except Exception:
+                    pass
 
             # Subtract paused time from elapsed so timeout doesn't tick while paused
             paused_time = self.pause_controller.total_paused if self.pause_controller else 0.0
@@ -161,6 +169,8 @@ class StepExecutor:
                 f"waiting {actual_wait:.0f}s before retry..."
             )
             self._interruptible_sleep(actual_wait)
+            if self.pause_controller and self.pause_controller.stop_requested:
+                raise RunStopped(result)
 
     @staticmethod
     def _get_nested(data, key_path: str):
@@ -449,6 +459,8 @@ class StepExecutor:
         while remaining > 0:
             if self.pause_controller:
                 self.pause_controller.wait_if_paused()
+            if self.pause_controller and self.pause_controller.stop_requested:
+                return
             chunk = min(0.5, remaining)
             time.sleep(chunk)
             remaining -= chunk

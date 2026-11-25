@@ -4,6 +4,7 @@
     const runBtn = document.getElementById("run-btn");
     const pauseBtn = document.getElementById("pause-btn");
     const resumeBtn = document.getElementById("resume-btn");
+    const stopBtn = document.getElementById("stop-btn");
     const runStatus = document.getElementById("run-status");
     const runBtnLabel = document.getElementById("run-btn-label");
     const clearSelectionBtn = document.getElementById("clear-selection-btn");
@@ -1655,6 +1656,7 @@
         runStatus.className = "run-status-badge running";
         pauseBtn.classList.add("hidden");
         resumeBtn.classList.add("hidden");
+        stopBtn.classList.add("hidden");
 
         stepBoxes.forEach(box => {
             box.className = box.className.replace(/\bstate-\w+/g, "");
@@ -1682,6 +1684,7 @@
             }
             currentRunId = data.run_id;
             pauseBtn.classList.remove("hidden");
+            showStopButton();
             pollRunStatus(data.run_id);
         } catch (err) {
             runStatus.textContent = `Error: ${err.message}`;
@@ -1707,6 +1710,45 @@
         runStatus.className = "run-status-badge running";
     });
 
+    function showStopButton() {
+        stopBtn.disabled = false;
+        stopBtn.lastChild.textContent = " Stop";
+        stopBtn.classList.remove("hidden");
+    }
+    // Stop confirmation popup (replaces the browser's native confirm box)
+    const stopConfirmModal = document.getElementById("stop-confirm-modal");
+    const stopConfirmOk = document.getElementById("stop-confirm-ok");
+    function closeStopConfirm() { stopConfirmModal.classList.add("hidden"); }
+    function stopRun() {
+        if (!currentRunId || stopBtn.disabled) return;
+        stopConfirmModal.classList.remove("hidden");
+        stopConfirmOk.focus();
+    }
+    async function confirmStopRun() {
+        closeStopConfirm();
+        if (!currentRunId) return;
+        stopBtn.disabled = true;
+        stopBtn.lastChild.textContent = " Stopping...";
+        runStatus.textContent = "Stopping...";
+        runStatus.className = "run-status-badge running";
+        try {
+            const res = await fetch(`/api/run/${currentRunId}/stop`, { method: "POST" });
+            if (!res.ok) throw new Error("run already finished");
+        } catch (e) {
+            showStopButton();   // the poll reports the final state
+        }
+    }
+    stopConfirmOk.addEventListener("click", confirmStopRun);
+    document.getElementById("stop-confirm-cancel").addEventListener("click", closeStopConfirm);
+    document.getElementById("stop-confirm-close").addEventListener("click", closeStopConfirm);
+    stopConfirmModal.addEventListener("click", (e) => { if (e.target === stopConfirmModal) closeStopConfirm(); });
+    document.addEventListener("keydown", (e) => {
+        if (e.key === "Escape" && !stopConfirmModal.classList.contains("hidden")) {
+            e.stopImmediatePropagation();
+            closeStopConfirm();
+        }
+    }, true);
+    stopBtn.addEventListener("click", stopRun);
     function pollRunStatus(runId) {
         if (pollTimer) clearInterval(pollTimer);
         pollTimer = setInterval(async () => {
@@ -1742,12 +1784,17 @@
                     currentRunId = null;
                     pauseBtn.classList.add("hidden");
                     resumeBtn.classList.add("hidden");
+                    stopBtn.classList.add("hidden");
+                    closeStopConfirm();
                     hideManualOverlay();
                     const passed = data.results.filter(r => r.success).length;
-                    const failed = data.results.filter(r => !r.success).length;
+                    const failed = data.results.filter(r => !r.success && !r.stopped).length;
                     if (data.status === "completed") {
                         runStatus.textContent = `✓ ${passed} passed, ${failed} failed`;
                         runStatus.className = "run-status-badge done";
+                    } else if (data.status === "stopped") {
+                        runStatus.textContent = `■ Stopped at ${data.results.length}/${steps.length}: ${passed} passed, ${failed} failed`;
+                        runStatus.className = "run-status-badge stopped";
                     } else {
                         runStatus.textContent = data.error || "Error";
                         runStatus.className = "run-status-badge error";
@@ -1759,6 +1806,7 @@
                 currentRunId = null;
                 pauseBtn.classList.add("hidden");
                 resumeBtn.classList.add("hidden");
+                stopBtn.classList.add("hidden");
                 hideManualOverlay();
                 runStatus.textContent = "Poll error";
                 runStatus.className = "run-status-badge error";
@@ -1822,7 +1870,12 @@
             } catch (e) { /* poll will pick up the state change */ }
         });
         card.appendChild(btn);
-
+        const stopLink = document.createElement("button");
+        stopLink.type = "button";
+        stopLink.className = "btn btn-ghost manual-stop-btn";
+        stopLink.textContent = "Stop run";
+        stopLink.addEventListener("click", stopRun);
+        card.appendChild(stopLink);
         manualOverlayEl.appendChild(card);
         document.querySelector(".main-content").appendChild(manualOverlayEl);
     }
@@ -1842,6 +1895,78 @@
         return "err";
     }
 
+    // One "key | value" row of a print_keys box; clicking the value copies it.
+    function buildPkEntry(k, v) {
+        const entry = document.createElement("div");
+        entry.className = "pk-entry";
+        entry.innerHTML = `<span class="pk-key-name" title="${esc(k)}">${esc(k)}</span><span class="pk-key-val" title="Copy value">${esc(String(v))}</span>`;
+        const keyValue = entry.querySelector(".pk-key-val");
+        const rawValue = String(v);
+        keyValue.dataset.tooltip = rawValue;
+        keyValue.title = rawValue;
+        attachFloatingTooltip(keyValue);
+        let copyTimer;
+        keyValue.addEventListener("click", function() {
+            const clipboard = navigator.clipboard;
+            if (!clipboard || typeof clipboard.writeText !== "function") {
+                keyValue.dataset.tooltip = "Copy failed";
+                keyValue.title = "Copy failed";
+                keyValue._refreshTooltip();
+                return;
+            }
+            clipboard.writeText(rawValue).then(() => {
+                keyValue.classList.add("pk-copied");
+                keyValue.dataset.tooltip = "Copied";
+                keyValue.title = "Copied";
+                keyValue._refreshTooltip();
+                clearTimeout(copyTimer);
+                copyTimer = setTimeout(() => {
+                    keyValue.classList.remove("pk-copied");
+                    keyValue.dataset.tooltip = rawValue;
+                    keyValue.title = rawValue;
+                    if (keyValue._refreshTooltip) keyValue._refreshTooltip();
+                }, 1400);
+            }).catch(() => {
+                keyValue.dataset.tooltip = "Copy failed";
+                keyValue.title = "Copy failed";
+                keyValue._refreshTooltip();
+            });
+        });
+    return entry;
+    }
+    // Live print_keys of the step that is running right now (updated on every polling attempt).
+    function syncLivePrintKeys(row, live) {
+        let wrap = row.querySelector(".live-pk");
+        const sig = JSON.stringify([live.attempt, live.status_code, live.printed_keys]);
+        if (wrap && wrap.dataset.sig === sig) return;
+        if (!wrap) {
+            wrap = document.createElement("div");
+            wrap.className = "side-connector live-pk";
+            wrap.addEventListener("click", (e) => e.stopPropagation());
+            const line = document.createElement("div");
+            line.className = "pk-line";
+            wrap.appendChild(line);
+            const content = document.createElement("div");
+            content.className = "side-content";
+            content.appendChild(document.createElement("div"));
+            wrap.appendChild(content);
+            row.appendChild(wrap);
+        }
+        wrap.dataset.sig = sig;
+        const pkBox = document.createElement("div");
+        pkBox.className = "pk-box pk-box-live";
+        const pkHeader = document.createElement("div");
+        pkHeader.className = "pk-header";
+        const code = live.status_code > 0 ? `HTTP ${live.status_code}` : "Value";
+        pkHeader.innerHTML = `<span><span class="pk-live-dot"></span>Live · #${esc(String(live.attempt))}</span><span>${esc(code)}</span>`;
+        pkBox.appendChild(pkHeader);
+        for (const [k, v] of Object.entries(live.printed_keys || {})) {
+            const entry = buildPkEntry(k, v);
+            if (v === "—" || v === undefined || v === null) entry.classList.add("pk-pending");
+            pkBox.appendChild(entry);
+        }
+        wrap.querySelector(".side-content").replaceChildren(pkBox);
+    }
     function updateStepStates(data, runId) {
         const results = data.results;
         stepBoxes.forEach((box, i) => {
@@ -1851,10 +1976,22 @@
 
             const row = box.parentElement;
             row.querySelectorAll(".retry-side-connector").forEach(el => el.remove());
+            row.parentElement.classList.remove("has-retry-stacked");
+            // Side panels (printed keys / evaluation message) are kept between polls, but they must
+            // be rebuilt when the step's data changes, e.g. after Retry, or dropped when the step has no result yet.
+            const shown = i < results.length ? results[i] : null;
+            const pkSig = shown && shown.printed_keys ? JSON.stringify(shown.printed_keys) : "";
+            const evalSig = shown && shown.eval_message ? JSON.stringify(shown.eval_message) : "";
+            row.querySelectorAll(".side-connector:not(.live-pk)").forEach(el => { if (el.dataset.sig !== pkSig) el.remove(); });
+            row.querySelectorAll(".eval-side-connector").forEach(el => { if (el.dataset.sig !== evalSig) el.remove(); });
+            const live = (data.status === "running" && data.live && data.live.step_index === i && i >= results.length) ? data.live : null;
+            if (live) syncLivePrintKeys(row, live);
+            else row.querySelectorAll(".live-pk").forEach(el => el.remove());
 
             if (i < results.length) {
                 const r = results[i];
-                if (r.skipped) { box.classList.add("state-skipped"); addIndicator(box, "—", "skipped"); }
+                if (r.stopped) { box.classList.add("state-skipped"); addIndicator(box, "■", "skipped"); }
+                else if (r.skipped) { box.classList.add("state-skipped"); addIndicator(box, "—", "skipped"); }
                 else if (r.success) { box.classList.add("state-passed"); addIndicator(box, "✓", "passed"); }
                 else { box.classList.add("state-failed"); addIndicator(box, "✗", "failed"); }
                 if (r.status_code && r.status_code > 0) {
@@ -1875,6 +2012,7 @@
                 if (hasMsg && !row.querySelector(".eval-side-connector")) {
                     const evalWrap = document.createElement("div");
                     evalWrap.className = "eval-side-connector";
+                    evalWrap.dataset.sig = evalSig;
                     evalWrap.addEventListener("click", (e) => e.stopPropagation());
                     const evalContent = document.createElement("div");
                     evalContent.className = "eval-side-content";
@@ -1895,6 +2033,7 @@
                 if (hasPK && !row.querySelector(".side-connector")) {
                     const wrap = document.createElement("div");
                     wrap.className = "side-connector";
+                    wrap.dataset.sig = pkSig;
                     wrap.addEventListener("click", (e) => e.stopPropagation());
 
                     const line = document.createElement("div");
@@ -1912,41 +2051,7 @@
 
                     for (const [k, v] of Object.entries(r.printed_keys)) {
                         if (v === undefined || v === null || v === "—") continue;
-                        const entry = document.createElement("div");
-                        entry.className = "pk-entry";
-                        entry.innerHTML = `<span class="pk-key-name" title="${esc(k)}">${esc(k)}</span><span class="pk-key-val" title="Copy value">${esc(String(v))}</span>`;
-                        const keyValue = entry.querySelector(".pk-key-val");
-                        const rawValue = String(v);
-                        keyValue.dataset.tooltip = rawValue;
-                        keyValue.title = rawValue;
-                        attachFloatingTooltip(keyValue);
-                        let copyTimer;
-                        keyValue.addEventListener("click", function() {
-                            const clipboard = navigator.clipboard;
-                            if (!clipboard || typeof clipboard.writeText !== "function") {
-                                keyValue.dataset.tooltip = "Copy failed";
-                                keyValue.title = "Copy failed";
-                                keyValue._refreshTooltip();
-                                return;
-                            }
-                            clipboard.writeText(rawValue).then(() => {
-                                keyValue.classList.add("pk-copied");
-                                keyValue.dataset.tooltip = "Copied";
-                                keyValue.title = "Copied";
-                                keyValue._refreshTooltip();
-                                clearTimeout(copyTimer);
-                                copyTimer = setTimeout(() => {
-                                    keyValue.classList.remove("pk-copied");
-                                    keyValue.dataset.tooltip = rawValue;
-                                    keyValue.title = rawValue;
-                                    if (keyValue._refreshTooltip) keyValue._refreshTooltip();
-                                }, 1400);
-                            }).catch(() => {
-                                keyValue.dataset.tooltip = "Copy failed";
-                                keyValue.title = "Copy failed";
-                                keyValue._refreshTooltip();
-                            });
-                        });
+                        const entry = buildPkEntry(k, v);
                         pkBox.appendChild(entry);
                     }
                     content.appendChild(pkBox);
@@ -1955,7 +2060,10 @@
                 }
 
                 if (data.retryable && runId && i === data.failed_step_index) {
-                    row.appendChild(buildRetryConnector(runId, !!row.querySelector(".side-connector")));
+                    const stacked = !!row.querySelector(".side-connector");
+                    row.appendChild(buildRetryConnector(runId, stacked));
+                    // A stacked Retry sits under the card; make room so it does not cover the "Step N" label or the Add Step pill.
+                    row.parentElement.classList.toggle("has-retry-stacked", stacked);
                 }
             } else if (data.status === "running" && i === results.length) {
                 if (data.waiting_manual) {
@@ -2011,6 +2119,7 @@
         runStatus.className = "run-status-badge running";
         pauseBtn.classList.remove("hidden");
         resumeBtn.classList.add("hidden");
+        showStopButton();
         pollRunStatus(runId);
     }
 

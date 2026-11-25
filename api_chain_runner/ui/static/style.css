@@ -1573,3 +1573,58 @@ details:not([open]) > summary > .nav-chevron { transform: rotate(-90deg); }
 body.is-searching .flow-card.search-only { display: flex; }
 body.is-searching #folder-section, body.is-searching #no-direct-files { display: none; }
 body.is-searching #file-section .drive-section-title::after { content: " (all folders)"; font-weight: 400; color: var(--text-muted); }
+
+/* Live print_keys while a polling step is running */
+.pk-box-live { border-color: var(--orange); }
+.pk-live-dot {
+    display: inline-block; width: 7px; height: 7px; margin-right: 0.4rem; border-radius: 50%;
+    background: var(--orange); vertical-align: middle; animation: pk-live-pulse 1.2s ease-in-out infinite;
+}
+.pk-pending .pk-key-val { color: var(--text-muted); }
+@keyframes pk-live-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
+@media (prefers-reduced-motion: reduce) { .pk-live-dot { animation: none; } }
+
+/* Stop run button + stopped badge */
+.btn-danger { background: var(--red-bg); color: var(--red); border-color: var(--red); }
+.btn-danger:hover { background: var(--red); color: #fff; }
+.btn-danger:disabled { opacity: 0.6; cursor: not-allowed; }
+.btn-danger.hidden { display: none; }
+.run-status-badge.stopped { background: var(--orange-bg); color: var(--orange); }
+.manual-stop-btn { width: 100%; justify-content: center; margin-top: 0.6rem; }
+.stop-confirm-overlay { z-index: 1100; }  /* above the manual-step overlay (1000) */
+
+/* Long errors collapse into a warning button with a tooltip (notice.js) */
+.run-status-badge, .detail-save-status { max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex-shrink: 1; min-width: 0; }
+.run-status-badge:has(> .status-notice-btn), .detail-save-status:has(> .status-notice-btn) { overflow: visible; max-width: none; flex-shrink: 0; }
+.status-notice-btn {
+    display: inline-flex; align-items: center; gap: 0.35rem; padding: 0.28rem 0.6rem;
+    background: var(--red-bg); color: var(--red); border: 1px solid var(--red);
+    border-radius: var(--radius-xs); font: inherit; font-size: 0.78rem; font-weight: 600; cursor: pointer;
+    transition: background 0.15s, color 0.15s;
+}
+.status-notice-btn:hover, .status-notice-btn[aria-expanded="true"] { background: var(--red); color: #fff; }
+.status-notice-btn:focus-visible { outline: 2px solid var(--red); outline-offset: 2px; }
+.status-notice-pop {
+    position: fixed; z-index: 2100; width: min(440px, calc(100vw - 1rem)); max-height: 60vh;
+    display: flex; flex-direction: column; padding: 0.7rem 0.85rem; gap: 0.5rem;
+    background: var(--bg-surface); color: var(--text); border: 1px solid var(--red);
+    border-radius: var(--radius-xs); box-shadow: var(--shadow-lg);
+    opacity: 0; transform: translateY(-4px); transition: opacity 0.12s, transform 0.12s;
+}
+.status-notice-pop.visible { opacity: 1; transform: translateY(0); }
+.status-notice-head { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; }
+.status-notice-title { font-size: 0.8rem; font-weight: 700; color: var(--red); }
+.status-notice-copy {
+    background: transparent; color: var(--text-secondary); border: 1px solid var(--border);
+    border-radius: 4px; padding: 0.1rem 0.5rem; font: inherit; font-size: 0.7rem; cursor: pointer;
+}
+.status-notice-copy:hover { color: var(--text); border-color: var(--text-muted); }
+.status-notice-msg {
+    font-family: 'SF Mono','Fira Code',monospace; font-size: 0.74rem; line-height: 1.45;
+    white-space: pre-wrap; overflow-wrap: anywhere; overflow-y: auto; user-select: text;
+}
+
+/* Stacked Retry button (under the card) pushes the "Step N" label and Add Step pill down so nothing overlaps */
+@media (min-width: 701px) {
+    .step-node.has-retry-stacked > .step-index { margin-top: 3.5rem; }
+}
