@@ -127,3 +127,12 @@ def test_ui_declares_retry_button_for_both_themes():
     assert ".retry-btn" in STYLE_CSS
     # Colours come from theme variables, so one rule set serves light and dark.
     assert "var(--orange)" in STYLE_CSS.split("Retry (failed stop-on-fail step)")[1]
+
+
+def test_side_panels_are_rebuilt_when_a_step_result_changes_after_retry():
+    """A retried step must not keep the printed keys of its failed attempt."""
+    from pathlib import Path
+    flow_js = (Path(__file__).parents[1] / "api_chain_runner/ui/static/flow.js").read_text(encoding="utf-8")
+    assert "wrap.dataset.sig = pkSig;" in flow_js
+    assert 'el.dataset.sig !== pkSig' in flow_js
+    assert 'el.dataset.sig !== evalSig' in flow_js

@@ -20,6 +20,7 @@ from flask import Flask, jsonify, redirect, render_template, request
 
 from api_chain_runner.runner import ChainRunner, _substitute_env_vars
 from api_chain_runner.models import VALID_CONDITION_OPERATORS
+from api_chain_runner.pause import RunStopped
 
 app = Flask(
     __name__,
@@ -327,6 +328,79 @@ def _apply_overrides(runner: ChainRunner, overrides: dict) -> None:
             runner.steps[idx] = dataclasses.replace(step, **changes)
 
 
+def _printed_keys_for(step, body) -> dict[str, str]:
+    """Resolve ``step.print_keys`` against a response body ("—" when a key is missing)."""
+    from api_chain_runner.executor import StepExecutor
+    printed: dict[str, str] = {}
+    for kp in step.print_keys or []:
+        if isinstance(body, dict):
+            try:
+                val = StepExecutor._get_nested(body, kp)
+                printed[kp] = str(val) if val is not None else "null"
+            except Exception:
+                printed[kp] = "—"
+        else:
+            printed[kp] = "—"
+    return printed
+
+
+def _record_live_attempt(run_id: str, idx: int, step, result, attempt: int) -> None:
+    """Publish the latest polling attempt of the running step (only when it has print_keys)."""
+    if not step.print_keys:
+        return
+    live = {
+        "step_index": idx,
+        "step_name": step.name,
+        "attempt": attempt,
+        "status_code": result.status_code,
+        "printed_keys": _printed_keys_for(step, result.response_body),
+        "updated_at": _local_timestamp(),
+    }
+    with _run_lock:
+        run = _active_runs.get(run_id)
+        if run is not None:
+            run["live"] = live
+
+
+def _finish_stopped(run_id: str, runner: ChainRunner, filepath: str, idx: int, step_result: dict | None) -> None:
+    """End a run the user stopped. Keeps the results gathered so far as the report."""
+    step = runner.steps[idx]
+    with _run_lock:
+        run = _active_runs[run_id]
+        if step_result is not None:
+            run["results"].append(step_result)
+        run["status"] = "stopped"
+        run["error"] = f"Run stopped by user at step '{step.name}'"
+        run["waiting_manual"] = False
+        run["manual_instruction"] = ""
+        run["manual_step_name"] = ""
+        run["manual_print_ref"] = []
+        run["live"] = None
+        run["retryable"] = False
+        _flow_stores[filepath] = dict(runner.store._data)
+        _active_runners.pop(run_id, None)
+        _manual_events.pop(run_id, None)
+
+
+def _stopped_step_result(step, partial, execution_time: str) -> dict:
+    """Result row for the step that was in progress when the user stopped the run."""
+    row = {
+        "step_name": step.name,
+        "status_code": partial.status_code if partial is not None else 0,
+        "success": False,
+        "duration_ms": round(partial.duration_ms, 1) if partial is not None else 0,
+        "executed_at": execution_time or _local_timestamp(),
+        "error": "Stopped by user",
+        "stopped": True,
+    }
+    if partial is not None:
+        body = partial.response_body
+        row["response_body"] = json.dumps(body, indent=2, default=str) if isinstance(body, (dict, list)) else str(body)
+        if step.print_keys:
+            row["printed_keys"] = _printed_keys_for(step, body)
+    return row
+
+
 def _abort_run(run_id: str, runner: ChainRunner, filepath: str, idx: int, step_result: dict) -> None:
     """Mark a run aborted at step *idx* and keep its runner so it can be retried."""
     step = runner.steps[idx]
@@ -396,6 +470,7 @@ def _run_chain_thread(
                 "error": None,
                 "retryable": False,
                 "failed_step_index": None,
+                "live": None,
             }
             _manual_events[run_id] = threading.Event()
 
@@ -433,10 +508,14 @@ def _run_chain_thread(
                 continue
             with _run_lock:
                 _active_runs[run_id]["current_step"] = idx
+                _active_runs[run_id]["live"] = None
                 _active_runs[run_id]["paused"] = runner.pause_controller._paused.is_set()
 
             # Block if paused from UI
             runner.pause_controller.wait_if_paused()
+            if runner.pause_controller.stop_requested:
+                _finish_stopped(run_id, runner, filepath, idx, None)
+                return
 
             try:
                 execution_time = None
@@ -506,6 +585,8 @@ def _run_chain_thread(
                         _active_runs[run_id]["manual_instruction"] = ""
                         _active_runs[run_id]["manual_step_name"] = ""
                         _active_runs[run_id]["manual_print_ref"] = []
+                    if runner.pause_controller.stop_requested:
+                        raise RunStopped()
 
                     step_result = {
                         "step_name": step.name,
@@ -519,9 +600,15 @@ def _run_chain_thread(
                 else:
                     if step.delay > 0:
                         import time
-                        time.sleep(step.delay)
+                        runner.executor._interruptible_sleep(step.delay)
+                        if runner.pause_controller.stop_requested:
+                            raise RunStopped()
 
                     execution_time = _local_timestamp()
+                    # Publish each polling attempt so the UI can show live print_keys
+                    runner.executor.on_poll_attempt = (
+                        lambda st, res, n, _idx=idx: _record_live_attempt(run_id, _idx, st, res, n)
+                    )
                     result = runner.executor.execute(step)
                     resp_preview = json.dumps(result.response_body, indent=2, default=str) if isinstance(result.response_body, (dict, list)) else str(result.response_body)
 
@@ -537,21 +624,8 @@ def _run_chain_thread(
 
                     # Extract print_keys values from response
                     if step.print_keys:
-                        from api_chain_runner.executor import StepExecutor
-                        printed = {}
-                        body = result.response_body
-                        if isinstance(body, dict):
-                            for kp in step.print_keys:
-                                try:
-                                    val = StepExecutor._get_nested(body, kp)
-                                    printed[kp] = str(val) if val is not None else "null"
-                                except Exception:
-                                    printed[kp] = "—"
-                        else:
-                            for kp in step.print_keys:
-                                printed[kp] = "—"
+                        printed = _printed_keys_for(step, result.response_body)
                         step_result["printed_keys"] = printed
-
                     # Extract eval results
                     if result.eval_result:
                         step_result["eval_result"] = {
@@ -570,6 +644,10 @@ def _run_chain_thread(
                         _abort_run(run_id, runner, filepath, idx, step_result)
                         return
 
+            except RunStopped as stop:
+                _finish_stopped(run_id, runner, filepath, idx,
+                                _stopped_step_result(step, stop.result, execution_time or ""))
+                return
             except Exception as exc:
                 step_result = {
                     "step_name": step.name,
@@ -947,6 +1025,21 @@ def api_run_pause(run_id):
         return jsonify({"error": "run not found or already finished"}), 404
     runner.pause_controller._paused.set()
     return jsonify({"success": True, "paused": True})
+
+
+@app.route("/api/run/<run_id>/stop", methods=["POST"])
+def api_run_stop(run_id):
+    """End a running chain early. The results gathered so far become the report."""
+    with _run_lock:
+        runner = _active_runners.get(run_id)
+        run = _active_runs.get(run_id)
+        evt = _manual_events.get(run_id)
+    if not runner or not run or run.get("status") != "running":
+        return jsonify({"error": "run not found or already finished"}), 404
+    runner.pause_controller.request_stop()
+    if evt:
+        evt.set()  # wake a manual step that is waiting for "Mark as Done"
+    return jsonify({"success": True, "stopping": True})
 
 
 @app.route("/api/run/<run_id>/resume", methods=["POST"])
