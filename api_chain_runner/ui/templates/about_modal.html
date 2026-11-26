@@ -1,0 +1,44 @@
+<button type="button" id="about-btn" class="help-fab" aria-label="Help, guided tour and about" aria-describedby="help-tip">
+    <svg class="icon"><use href="#i-help"/></svg>
+    <span id="help-tip" class="help-tip" role="tooltip">
+        <strong>Need help?</strong>
+        <span>Take the guided tour or read the guide.</span>
+    </span>
+</button>
+<div id="about-modal" class="request-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="about-title">
+    <div class="about-panel">
+        <header class="rp-header">
+            <div class="rp-title">
+                <span class="env-logo"><svg class="icon"><use href="#i-chain"/></svg></span>
+                <h3 id="about-title">API Chain Runner</h3>
+            </div>
+            <button id="about-close" type="button" class="rp-icon-btn" aria-label="Close" title="Close (Esc)"><svg class="icon"><use href="#i-x"/></svg></button>
+        </header>
+        <div class="about-body">
+            <p class="about-lead">Chain API calls in YAML, then run, debug and document them from your browser.</p>
+            <div class="about-cta">
+                <button id="about-tour-btn" type="button" class="about-cta-btn about-cta-primary">
+                    <svg class="icon"><use href="#i-compass"/></svg>
+                    <span><strong>Guided tour</strong><span>Learn every button on this page</span></span>
+                </button>
+                <a class="about-cta-btn" href="/about">
+                    <svg class="icon"><use href="#i-file"/></svg>
+                    <span><strong>Read the guide</strong><span>Features explained, with examples</span></span>
+                </a>
+            </div>
+            <div class="about-creator">
+                <p class="about-madeby">Made with <span class="about-brain" role="img" aria-label="brain">🧠</span> by <strong>Sambit Saha</strong></p>
+            </div>
+            <div class="about-actions">
+                <a class="about-link about-link-star" href="https://github.com/sambitos23/api-chain-runner" target="_blank" rel="noopener noreferrer">
+                    <span class="about-link-icon"><svg class="icon"><use href="#i-star"/></svg></span>
+                    <span class="about-link-text"><strong>Star on GitHub</strong><span>A star helps others find it.</span></span>
+                </a>
+                <a class="about-link about-link-linkedin" href="https://www.linkedin.com/in/sambit-saha/" target="_blank" rel="noopener noreferrer">
+                    <span class="about-link-icon"><svg class="icon"><use href="#i-linkedin"/></svg></span>
+                    <span class="about-link-text"><strong>Contact on LinkedIn</strong><span>Send me a message with any concern.</span></span>
+                </a>
+            </div>
+        </div>
+    </div>
+</div>

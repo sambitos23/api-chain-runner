@@ -590,7 +590,7 @@ This opens a local web server at `http://127.0.0.1:5656` with:
 - **Flow Visualization** — each chain is rendered as a vertical flowchart with step boxes, method badges (GET/POST/PUT/DELETE), and connector arrows
 - **Run from UI** — click "Run Chain" to execute the flow live; each step lights up with pass/fail status and HTTP status codes color-coded (green for 2xx, orange for 4xx, red for 5xx)
 - **Step Responses** — after a run, a response table shows every step's status code, duration, and response body with resizable preview
-- **Step Editor** — click any step to open a slide-over drawer showing full details (URL, headers, payload, polling config); editable fields can be modified and saved directly back to the YAML file
+- **Step Editor** — click any step to open a slide-over drawer showing full details (URL, query params, headers, payload, print keys, conditions, polling config). The payload fields appear as soon as you pick a method with a body; editable fields can be modified and saved directly back to the YAML file
 - **Run Selected Steps** — Ctrl/Cmd+click steps to run only those; a popup asks for the payload, query-param and file values, with the keys filled in for you
 - **Retry Failed Steps** — when a stop-on-fail step fails, a Retry button re-runs it and continues the chain with the existing context
 - **Add Step on Hover** — hover any step card to insert a new step right after it (API request or manual step)
@@ -599,6 +599,8 @@ This opens a local web server at `http://127.0.0.1:5656` with:
 - **Stop a Run** — a **Stop** button ends the run at the current step (even mid-polling or on a manual step) and shows the report of everything that ran so far, ready to export
 - **Live Print Keys** — while a polling step is running, its `print_keys` appear next to the step and refresh after every polling attempt, so you can watch values change before the step finishes
 - **Environment Variables Editor** — an **Environment** button at the bottom of the sidebar opens a popup to view, add, edit and delete the variables in your `.env` file
+- **Help Button and Guided Tour** — a **?** button at the bottom right of every page (it glows once on your first visit) opens a short About popup with the creator (Sambit Saha), a GitHub star link and a LinkedIn contact link. **Guided tour** spotlights every button on the current page and explains it, and on a flow page it opens the step drawer and the request panel to explain their buttons too
+- **Guide Page** — `/about` is a short built-in guide: quick start, YAML basics, step options, and what each dashboard and flow-page control does
 - **API or Manual Steps** — the Add Step drawer lets you pick an API request or a manual step
 - **Glass Design** — translucent glass panels over a soft blue background, tuned for both light and dark mode
 - **Full YAML Editor** — open the raw YAML editor from the sidebar to edit the entire flow file with syntax-aware editing and save
