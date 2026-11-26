@@ -36,6 +36,7 @@
         {% include 'env_button.html' %}
     </aside>
     {% include 'env_modal.html' %}
+    {% include 'about_modal.html' %}
     <main class="main-content dot-bg">
         <div class="topbar">
             <div class="breadcrumb">
@@ -58,6 +59,7 @@
     <script src="{{ url_for('static', filename='theme.js') }}"></script>
     <script src="{{ url_for('static', filename='notice.js') }}"></script>
     <script src="{{ url_for('static', filename='env.js') }}"></script>
+    <script src="{{ url_for('static', filename='about.js') }}"></script>
     <script>
     (function() {
         const container = document.getElementById("monaco-container");

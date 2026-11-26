@@ -749,6 +749,9 @@ def index():
     return render_template("index.html", flows=flows, tree=tree, current=current, crumbs=crumbs)
 
 
+@app.route("/about")
+def about_page():
+    return render_template("about.html")
 @app.route("/flow/<path:flow_path>")
 def flow_view(flow_path):
     abs_path = os.path.join(_flow_dir, flow_path)

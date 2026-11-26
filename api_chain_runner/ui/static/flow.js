@@ -1102,23 +1102,26 @@
             html += `<div class="detail-row"><div class="detail-label">Method</div>
                 <select class="detail-select" data-field="method">${methods.map(m => `<option${m===curMethod?" selected":""}>${m}</option>`).join("")}</select></div>`;
             html += inputRow("url", "URL", step.url || "");
+            html += buildQueryParams(step.url || "");
             html += numberRow("delay", "Delay (seconds)", step.delay || 0);
             html += dropdownRow("continue_on_error", "Continue on Error", step.continue_on_error);
+            // Headers and the body fields. The body rows are always rendered and only hidden for
+            // methods without a body, so switching the Method select shows them straight away.
+            html += `<div id="sec-request-data">`;
             html += editableRow("headers", "Headers", step.headers && Object.keys(step.headers).length ? JSON.stringify(step.headers, null, 2) : "{}");
-
-            if (curMethod !== "GET" && curMethod !== "HEAD" && curMethod !== "OPTIONS") {
-                html += editableRow("payload", "Payload", step.payload ? JSON.stringify(step.payload, null, 2) : "");
-                html += editableRow("unique_fields", "Unique Fields", step.unique_fields ? JSON.stringify(step.unique_fields, null, 2) : "");
-                html += editableRow("files", "Files", step.files ? JSON.stringify(step.files, null, 2) : "");
-            }
+            html += `<div class="method-body-rows${methodHasBody(curMethod) ? "" : " hidden"}" id="method-body-rows">`;
+            html += editableRow("payload", "Payload", step.payload ? JSON.stringify(step.payload, null, 2) : "", '{ "key": "value" }');
+            html += editableRow("unique_fields", "Unique Fields", step.unique_fields ? JSON.stringify(step.unique_fields, null, 2) : "");
+            html += editableRow("files", "Files", step.files ? JSON.stringify(step.files, null, 2) : "");
+            html += `</div></div>`;
 
             // Print Keys — structured list
-            html += buildListField("print_keys", "Print Keys", step.print_keys || [], "e.g. leadId");
-            html += buildToggleSection("condition", "Conditions", (step.condition || []).length ? step.condition : null, buildConditionFields);
+            html += `<div id="sec-print">` + buildListField("print_keys", "Print Keys", step.print_keys || [], "e.g. leadId") + `</div>`;
+            html += `<div id="sec-condition">` + buildToggleSection("condition", "Conditions", (step.condition || []).length ? step.condition : null, buildConditionFields) + `</div>`;
 
             // Polling — structured
             const p = (step.has_polling && step.polling) ? step.polling : null;
-            html += buildToggleSection("polling", "Polling", p, buildPollingFields);
+            html += `<div id="sec-polling">` + buildToggleSection("polling", "Polling", p, buildPollingFields) + `</div>`;
 
             // Retry — structured
             const retryData = step.retry;
@@ -1134,6 +1137,8 @@
         wireToggleSections();
         wireListFields();
         wireConditionFields();
+        wireQueryParams();
+        wireMethodSelect();
         if (isNew) {
             // Switching type rebuilds the form but keeps whatever name was already typed.
             detailBody.querySelectorAll("#new-step-type .rp-seg-btn").forEach(btn => btn.addEventListener("click", () => {
@@ -1163,9 +1168,58 @@
                 <option value="false"${!currentVal?" selected":""}>false</option>
             </select></div>`;
     }
-    function editableRow(field, label, value) {
+    function editableRow(field, label, value, placeholder) {
+        const ph = placeholder ? ` placeholder="${esc(placeholder)}"` : "";
         return `<div class="detail-row"><div class="detail-label">${esc(label)}</div>
-            <textarea class="detail-editable" data-field="${esc(field)}" spellcheck="false">${esc(String(value))}</textarea></div>`;
+            <textarea class="detail-editable" data-field="${esc(field)}" spellcheck="false"${ph}>${esc(String(value))}</textarea></div>`;
+    }
+
+    // Methods that can carry a request body show Payload, Unique Fields and Files in the drawer.
+    function methodHasBody(method) {
+        return !["GET", "HEAD", "OPTIONS"].includes(String(method).toUpperCase());
+    }
+    function wireMethodSelect() {
+        const select = detailBody.querySelector('select[data-field="method"]');
+        const rows = detailBody.querySelector("#method-body-rows");
+        if (!select || !rows) return;
+        select.addEventListener("change", () => rows.classList.toggle("hidden", !methodHasBody(select.value)));
+    }
+
+    // Query params live in the URL after "?". These rows edit that part of the URL input.
+    function queryItemHtml(key, value) {
+        return `<div class="query-item"><input class="detail-editable-input query-key" value="${esc(key)}" placeholder="key" spellcheck="false" aria-label="Query param name">`
+            + `<input class="detail-editable-input query-val" value="${esc(value)}" placeholder="value" spellcheck="false" aria-label="Query param value">`
+            + `<button type="button" class="btn-icon-only query-remove" title="Remove" aria-label="Remove query param">×</button></div>`;
+    }
+    function buildQueryParams(url) {
+        return `<div class="detail-row" id="sec-query"><div class="detail-label">Query Params</div>
+            <div class="query-field">${parseUrlParams(url).map(r => queryItemHtml(r.key, r.value)).join("")}`
+            + `<button type="button" class="btn btn-ghost btn-sm query-add">+ Add</button></div></div>`;
+    }
+    function wireQueryParams() {
+        const field = detailBody.querySelector(".query-field");
+        const urlInput = detailBody.querySelector('input[data-field="url"]');
+        if (!field || !urlInput) return;
+        const addBtn = field.querySelector(".query-add");
+        const collect = () => [...field.querySelectorAll(".query-item")].map(item => ({
+            key: item.querySelector(".query-key").value.trim(),
+            value: item.querySelector(".query-val").value,
+        }));
+        const syncUrl = () => { urlInput.value = urlWithParams(urlInput.value, collect()); };
+        field.addEventListener("input", (e) => { if (e.target.closest(".query-item")) syncUrl(); });
+        field.addEventListener("click", (e) => {
+            const remove = e.target.closest(".query-remove");
+            if (remove) { remove.closest(".query-item").remove(); syncUrl(); }
+        });
+        addBtn.addEventListener("click", () => {
+            addBtn.insertAdjacentHTML("beforebegin", queryItemHtml("", ""));
+            field.querySelectorAll(".query-key")[field.querySelectorAll(".query-key").length - 1].focus();
+        });
+        // Typing in the URL box rebuilds the rows, so both views always agree.
+        urlInput.addEventListener("input", () => {
+            field.querySelectorAll(".query-item").forEach(item => item.remove());
+            addBtn.insertAdjacentHTML("beforebegin", parseUrlParams(urlInput.value).map(r => queryItemHtml(r.key, r.value)).join(""));
+        });
     }
 
     // List field — add/remove items
@@ -1496,6 +1550,7 @@
         for (const el of editables) {
             const field = el.dataset.field;
             if (!field) continue;
+            if (el.closest(".method-body-rows.hidden")) continue; // method has no body
             const raw = el.value.trim();
 
             if (!raw && !["method", "url", "delay", "continue_on_error", "instruction"].includes(field)) continue;

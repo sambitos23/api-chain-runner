@@ -401,6 +401,8 @@ This opens a local web server at `http://127.0.0.1:5656` with:
 - **Stop a Run** — a **Stop** button ends the run at the current step (even mid-polling or on a manual step) and shows the report of everything that ran so far, ready to export
 - **Live Print Keys** — while a polling step is running, its `print_keys` appear next to the step and refresh after every polling attempt
 - **Environment Variables Editor** — an **Environment** button at the bottom of the sidebar opens a popup to view, add, edit and delete the variables in your `.env` file
+- **Help Button and Guided Tour** — a **?** button at the bottom right of every page (it glows once on your first visit) opens a short About popup with the creator (Sambit Saha), a GitHub star link and a LinkedIn contact link. **Guided tour** spotlights every button on the current page and explains it, and on a flow page it opens the step drawer and the request panel to explain their buttons too
+- **Guide Page** — `/about` is a short built-in guide: quick start, YAML basics, step options, and what each dashboard and flow-page control does
 - **API or Manual Steps** — the Add Step drawer lets you pick an API request or a manual step
 - **Glass Design** — translucent glass panels over a soft blue background, tuned for both light and dark mode
 - **Full YAML Editor** — edit the raw YAML with save support

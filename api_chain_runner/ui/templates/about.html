@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Guide — API Chain Runner</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    {% include 'icons.html' %}
+    <aside class="sidebar">
+        <div class="sidebar-header">
+            <div class="logo">
+                <svg class="icon icon-logo"><use href="#i-chain"/></svg>
+                <span class="logo-text">Chain Runner</span>
+            </div>
+            <button class="theme-toggle" id="theme-toggle" title="Toggle theme">
+                <span class="theme-icon-dark"><svg class="icon"><use href="#i-moon"/></svg></span>
+                <span class="theme-icon-light"><svg class="icon"><use href="#i-sun"/></svg></span>
+            </button>
+        </div>
+        <nav class="sidebar-nav">
+            <div class="nav-section">
+                <span class="nav-label">Navigation</span>
+                <a href="/" class="nav-item"><svg class="icon"><use href="#i-grid"/></svg> Dashboard</a>
+                <a href="/about" class="nav-item active"><svg class="icon"><use href="#i-help"/></svg> Guide</a>
+            </div>
+            <div class="nav-section">
+                <span class="nav-label">On this page</span>
+                <div class="guide-toc" id="guide-toc">
+                    <a href="#overview">Overview</a>
+                    <a href="#quick-start">Quick start</a>
+                    <a href="#first-chain">Your first chain</a>
+                    <a href="#references">Passing values</a>
+                    <a href="#step-options">Step options</a>
+                    <a href="#dashboard">The dashboard</a>
+                    <a href="#flow-page">The flow page</a>
+                    <a href="#request-panel">Request panel</a>
+                    <a href="#environment">Environment</a>
+                    <a href="#flow-docs">Flow documentation</a>
+                    <a href="#shortcuts">Shortcuts</a>
+                    <a href="#creator">Creator and support</a>
+                </div>
+            </div>
+        </nav>
+        {% include 'env_button.html' %}
+    </aside>
+    {% include 'env_modal.html' %}
+
+    <main class="main-content dot-bg">
+        <div class="topbar">
+            <div class="breadcrumb">
+                <svg class="icon icon-sm"><use href="#i-chain"/></svg>
+                <a href="/">Dashboard</a>
+                <span class="bc-sep">/</span>
+                <span>Guide</span>
+            </div>
+        </div>
+        <div class="page-content">
+            <article class="guide">
+                <header class="guide-hero">
+                    <h1>API Chain Runner guide</h1>
+                    <p>The basics of what is built in, in the order you will use it. Press the <strong>?</strong> button on any page for a guided tour of its buttons.</p>
+                </header>
+
+                <section id="overview" class="guide-section">
+                    <h2>Overview</h2>
+                    <p>API Chain Runner runs a list of API calls described in a YAML file. Each call is a <em>step</em>, and a step can use values from the responses of earlier steps. You can run the chain from the command line or from this web UI.</p>
+                    <ul>
+                        <li>Chain calls and pass response values forward.</li>
+                        <li>Poll until a field reaches an expected value, and retry failed calls.</li>
+                        <li>Pause for a manual step, such as an approval done by a person.</li>
+                        <li>See each step's result live, send single requests, and export results to CSV.</li>
+                    </ul>
+                </section>
+
+                <section id="quick-start" class="guide-section">
+                    <h2>Quick start</h2>
+                    <pre class="guide-code"><code># run a chain from the terminal
+api-chain-runner my_chain.yaml
+
+# open this web UI on a folder of flows
+api-chain-runner --ui flow/</code></pre>
+                    <p>Any <code>.yaml</code> file with a <code>chain</code> key in the flow folder shows up on the dashboard.</p>
+                </section>
+
+                <section id="first-chain" class="guide-section">
+                    <h2>Your first chain</h2>
+                    <p>Use <strong>New Flow</strong> on the dashboard, or write the file by hand:</p>
+                    <pre class="guide-code"><code>variables:
+  base_url: "https://api.example.com"
+
+chain:
+  - name: auth
+    url: "${vars.base_url}/login"
+    method: POST
+    payload:
+      email: "${ENV:AUTH_EMAIL}"
+      password: "${ENV:AUTH_PASSWORD}"
+
+  - name: get_user
+    url: "${vars.base_url}/user"
+    method: GET
+    headers:
+      Authorization: "Bearer ${auth.token}"</code></pre>
+                    <p>Steps run from top to bottom. <code>name</code> must be unique because other steps use it to refer to this step's response.</p>
+                </section>
+
+                <section id="references" class="guide-section">
+                    <h2>Passing values between steps</h2>
+                    <table class="guide-table">
+                        <thead><tr><th>Write</th><th>Meaning</th></tr></thead>
+                        <tbody>
+                            <tr><td><code>${auth.token}</code></td><td>The <code>token</code> field in the response of the step named <code>auth</code>. Nested paths such as <code>${app.data.id}</code> work too.</td></tr>
+                            <tr><td><code>${vars.base_url}</code></td><td>A value from the <code>variables</code> block at the top of the file.</td></tr>
+                            <tr><td><code>${ENV:API_KEY}</code></td><td>An environment variable. Keeps secrets out of YAML. Manage them with the <strong>Environment</strong> button.</td></tr>
+                        </tbody>
+                    </table>
+                </section>
+
+                <section id="step-options" class="guide-section">
+                    <h2>Step options</h2>
+                    <p>Only <code>name</code>, <code>url</code> and <code>method</code> are needed. The rest are optional.</p>
+                    <table class="guide-table">
+                        <thead><tr><th>Option</th><th>What it does</th></tr></thead>
+                        <tbody>
+                            <tr><td><code>headers</code>, <code>payload</code></td><td>Request headers and JSON body.</td></tr>
+                            <tr><td><code>files</code></td><td>Upload files as multipart form data (<code>field: path</code>).</td></tr>
+                            <tr><td><code>delay</code></td><td>Seconds to wait before the step runs.</td></tr>
+                            <tr><td><code>polling</code></td><td>Repeat the call until a response field (<code>key_path</code>) equals one of <code>expected_values</code>, checking every <code>interval</code> seconds up to <code>max_timeout</code>.</td></tr>
+                            <tr><td><code>retry</code></td><td>Retry on timeouts, connection errors and 5xx. Default is 3 attempts. Use <code>retry: false</code> to turn it off.</td></tr>
+                            <tr><td><code>condition</code></td><td>Run the step only if an earlier step's response matches a value.</td></tr>
+                            <tr><td><code>print_keys</code></td><td>Response fields to show beside the step. They refresh live while polling.</td></tr>
+                            <tr><td><code>eval_keys</code>, <code>eval_condition</code></td><td>Pull response values into names and check them with an expression, with a success or failure message.</td></tr>
+                            <tr><td><code>continue_on_error</code></td><td>Set to <code>false</code> to stop the chain when this step fails. The UI then offers Retry.</td></tr>
+                            <tr><td><code>manual</code>, <code>instruction</code></td><td>A step with no HTTP call. The run waits until you confirm it.</td></tr>
+                        </tbody>
+                    </table>
+                </section>
+
+                <section id="dashboard" class="guide-section">
+                    <h2>The dashboard</h2>
+                    <table class="guide-table">
+                        <thead><tr><th>Control</th><th>What it does</th></tr></thead>
+                        <tbody>
+                            <tr><td>Folders and flow cards</td><td>Browse your flows like a file drive. Click a card to open the flow.</td></tr>
+                            <tr><td>Search (<kbd>/</kbd>)</td><td>Finds flows in every folder as you type. <kbd>Enter</kbd> opens the first match.</td></tr>
+                            <tr><td>New Flow</td><td>Creates a YAML file with a name, optional folder and starter steps.</td></tr>
+                            <tr><td>Sidebar tree</td><td>The same folders and flows. Folder arrows collapse and expand.</td></tr>
+                            <tr><td>Theme toggle</td><td>Switches between dark and light mode.</td></tr>
+                        </tbody>
+                    </table>
+                </section>
+
+                <section id="flow-page" class="guide-section">
+                    <h2>The flow page</h2>
+                    <p>Each flow is drawn as a vertical chart of step cards. Card borders turn green, orange or red as steps pass or fail.</p>
+                    <table class="guide-table">
+                        <thead><tr><th>Control</th><th>What it does</th></tr></thead>
+                        <tbody>
+                            <tr><td>Run Chain</td><td>Runs every step in order.</td></tr>
+                            <tr><td>Ctrl/Cmd + click cards</td><td>Selects steps. Run then executes only those and asks for the payload, query and file values they use.</td></tr>
+                            <tr><td>Pause, Resume, Stop</td><td>Appear during a run. Stop ends it at the current step and shows a report of what ran.</td></tr>
+                            <tr><td>Retry</td><td>Shown on a failed stop-on-fail step. Re-runs it and continues with the data collected so far.</td></tr>
+                            <tr><td>Click a card</td><td>Opens the edit drawer for URL, headers, payload, polling and retry. <strong>Save Changes</strong> writes to the YAML.</td></tr>
+                            <tr><td>Add Step pill</td><td>Hover a card to insert a new API or manual step after it.</td></tr>
+                            <tr><td>Edit YAML</td><td>Edits the whole file in a code editor.</td></tr>
+                            <tr><td>Step Responses</td><td>After a run, a table of every step's status, time and response. Download it as CSV.</td></tr>
+                        </tbody>
+                    </table>
+                </section>
+
+                <section id="request-panel" class="guide-section">
+                    <h2>Request panel</h2>
+                    <p>Click a step in the sidebar list to open a Postman-style window that sends just that one request. You can change the method, URL, params, headers and body (JSON, form-data with file upload, or urlencoded) and read the response with status, time and size. <strong>Copy cURL</strong> copies the request for a terminal. Nothing you do here changes the YAML.</p>
+                </section>
+
+                <section id="environment" class="guide-section">
+                    <h2>Environment variables</h2>
+                    <p>The <strong>Environment</strong> button in the sidebar opens your <code>.env</code> file. Add, edit or delete variables, then reference them as <code>${ENV:NAME}</code>. Values stay hidden until you choose Show values, and changes apply to the next run without a restart.</p>
+                </section>
+
+                <section id="flow-docs" class="guide-section">
+                    <h2>Flow documentation</h2>
+                    <p>Every flow has a Documentation page, reached from the sidebar of the flow. It holds a title, description, group, tags, rich-text notes, authors and a change log, so the team knows what a chain is for.</p>
+                </section>
+
+                <section id="shortcuts" class="guide-section">
+                    <h2>Shortcuts</h2>
+                    <table class="guide-table">
+                        <thead><tr><th>Keys</th><th>Action</th></tr></thead>
+                        <tbody>
+                            <tr><td><kbd>/</kbd></td><td>Focus search on the dashboard</td></tr>
+                            <tr><td><kbd>Ctrl/Cmd</kbd> + click</td><td>Select steps to run</td></tr>
+                            <tr><td><kbd>Ctrl/Cmd</kbd> + <kbd>Enter</kbd></td><td>Send, in the request panel</td></tr>
+                            <tr><td><kbd>Esc</kbd></td><td>Close popups and the tour, clear the selection</td></tr>
+                        </tbody>
+                    </table>
+                </section>
+
+                <section id="creator" class="guide-section guide-creator">
+                    <h2>Creator and support</h2>
+                    <p>Made with <span role="img" aria-label="brain">🧠</span> by <strong>Sambit Saha</strong>. If it saves you time, a GitHub star helps other people find it. For questions or any concern, send a message on LinkedIn.</p>
+                    <div class="about-actions">
+                        <a class="about-link about-link-star" href="https://github.com/sambitos23/api-chain-runner" target="_blank" rel="noopener noreferrer">
+                            <span class="about-link-icon"><svg class="icon"><use href="#i-star"/></svg></span>
+                            <span class="about-link-text"><strong>Star on GitHub</strong><span>github.com/sambitos23/api-chain-runner</span></span>
+                        </a>
+                        <a class="about-link about-link-linkedin" href="https://www.linkedin.com/in/sambit-saha/" target="_blank" rel="noopener noreferrer">
+                            <span class="about-link-icon"><svg class="icon"><use href="#i-linkedin"/></svg></span>
+                            <span class="about-link-text"><strong>Contact on LinkedIn</strong><span>linkedin.com/in/sambit-saha</span></span>
+                        </a>
+                    </div>
+                </section>
+            </article>
+        </div>
+    </main>
+    <script src="{{ url_for('static', filename='theme.js') }}"></script>
+    <script src="{{ url_for('static', filename='env.js') }}"></script>
+    <script src="{{ url_for('static', filename='guide.js') }}"></script>
+</body>
+</html>
